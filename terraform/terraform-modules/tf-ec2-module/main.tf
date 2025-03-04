@@ -15,7 +15,7 @@ resource "aws_internet_gateway" "net-igw" {
 
 resource "aws_instance" "web" {
   ami                    = "ami-02141377eee7defb9" # Ubuntu AMI
-  instance_type          = "t2.micro"
+  instance_type          = "t3.medium"
   availability_zone      = var.public_subnet_az
   subnet_id              = aws_subnet.public-subnet.id
   vpc_security_group_ids = [aws_security_group.sg.id]
