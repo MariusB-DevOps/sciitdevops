@@ -19,10 +19,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ansible
 
+          if [ -d "/usr/local/bin/terraform" ]; then
+              sudo rm -rf /usr/local/bin/terraform
+          elif [ -f "/usr/local/bin/terraform" ]; then
+                sudo rm /usr/local/bin/terraform
+          fi
+
           # Install Terraform
-          #wget https://releases.hashicorp.com/terraform/1.11.2/terraform_1.11.2_linux_amd64.zip
-          #unzip -o terraform_1.11.2_linux_amd64.zip
-          #sudo mv terraform /usr/local/bin/
+          wget https://releases.hashicorp.com/terraform/1.11.2/terraform_1.11.2_linux_amd64.zip
+          unzip -o terraform_1.11.2_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
 
           # Install Kubernetes CLI (kubectl)
           curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -74,7 +80,7 @@ jobs:
           sudo tar -xzf ../artifacts/environment.tar.gz -C /
 
           echo "🔹 Setting execution permissions..."
-          #sudo chmod +x /usr/local/bin/terraform
+          sudo chmod +x /usr/local/bin/terraform
           sudo chmod +x /usr/local/bin/kubectl
           sudo chmod +x /usr/local/bin/argocd
 
