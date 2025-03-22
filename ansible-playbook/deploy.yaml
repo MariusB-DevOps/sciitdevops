@@ -14,7 +14,7 @@
   tasks:
     - name: Deploy networking and EKS using Terraform
       import_role:
-        name: terraform
+        name: eks
       tags: eks
       
     - name: Deploy ArgoCD using Terraform
