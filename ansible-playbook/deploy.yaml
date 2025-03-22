@@ -1,0 +1,48 @@
+- name: Deploy Terraform infrastructure
+  hosts: localhost
+  become: false
+  vars:
+    terraform_dir: "{{ playbook_dir }}/roles/terraform"
+    argocd_dir: "{{ playbook_dir }}/roles/argocd"
+    jenkins_dir: "{{ playbook_dir }}/roles/jenkins"
+    app_dir: "{{ playbook_dir }}/roles/app"
+    git_dir: "{{ playbook_dir }}/roles/git"
+    jenkins_setup_dir: "{{ playbook_dir }}/roles/jenkins_setup"
+    dns_domain: "k8s.it.com"
+    jenkins_dns: "jenkins.k8s.it.com"
+
+  tasks:
+    - name: Deploy networking and EKS using Terraform
+      import_role:
+        name: terraform
+      tags: terraform
+      
+    - name: Deploy ArgoCD using Terraform
+      import_role:
+        name: argocd
+      tags: argocd
+
+    - name: Deploy Jenkins dependencies using Terraform
+      import_role:
+        name: jenkins
+      tags: jenkins
+
+    - name: Deploy Jenkins through ArgoCD
+      import_role:
+        name: app
+      tags: app
+
+    - name: Configure GitHub in ArgoCD
+      import_role:
+        name: git
+      tags: git
+
+    - name: Configure Jenkins + GitHub
+      import_role:
+        name: jenkins_setup
+      tags: jenkins_setup 
+
+    - name: Deploy Prometheus and Grafana
+      import_role:
+        name: monitoring_setup
+      tags: monitoring_setup
