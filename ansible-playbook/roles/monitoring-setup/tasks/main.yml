@@ -1,0 +1,135 @@
+- name: Add Helm repo for Prometheus and Grafana
+  shell: |
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm repo add grafana https://grafana.github.io/helm-charts
+    helm repo update
+
+- name: Copy Prometheus values file
+  copy:
+    src: prometheus-values.yaml
+    dest: /tmp/prometheus-values.yaml
+
+- name: Copy Grafana values file
+  copy:
+    src: grafana-values.yaml
+    dest: /tmp/grafana-values.yaml
+
+- name: Deploy Prometheus in EKS
+  shell: |
+    helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+      --namespace monitoring --create-namespace \
+      --values /tmp/prometheus-values.yaml
+
+- name: Deploy Grafana in EKS
+  shell: |
+    helm upgrade --install grafana grafana/grafana \
+      --namespace monitoring \
+      --values /tmp/grafana-values.yaml
+
+### ✅ IAM CONFIG
+
+- name: Create IAM policy for Prometheus
+  shell: |
+    cat <<EOF > /tmp/prometheus-iam-policy.json
+    {
+    "Version": "2012-10-17",
+    "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+            "ec2:Describe*",
+            "elasticloadbalancing:Describe*",
+            "cloudwatch:GetMetricData",
+            "cloudwatch:ListMetrics",
+            "cloudwatch:GetMetricStatistics",
+            "autoscaling:Describe*",
+            "route53:ListHostedZones",
+            "route53:GetHostedZone",
+            "route53:ChangeResourceRecordSets",
+            "route53:ListResourceRecordSets"
+                ],
+      "Resource": "*"
+    }
+                ]
+    }
+    EOF
+    aws iam create-policy --policy-name PrometheusPolicy --policy-document file:///tmp/prometheus-iam-policy.json || true
+
+- name: Attach IAM policy to Prometheus ServiceAccount
+  shell: |
+    eksctl create iamserviceaccount \
+      --name prometheus \
+      --namespace monitoring \
+      --cluster main-eks-cluster \
+      --attach-policy-arn arn:aws:iam::597088032758:policy/PrometheusPolicy \
+      --approve || true
+
+### ✅ SERVICEMONITOR CONFIG
+
+- name: Copy Jenkins ServiceMonitor
+  copy:
+    src: jenkins-servicemonitor.yaml
+    dest: /tmp/jenkins-servicemonitor.yaml
+
+- name: Copy ArgoCD ServiceMonitor
+  copy:
+    src: argocd-servicemonitor.yaml
+    dest: /tmp/argocd-servicemonitor.yaml
+
+- name: Apply Jenkins ServiceMonitor
+  shell: kubectl apply -f /tmp/jenkins-servicemonitor.yaml
+
+- name: Apply ArgoCD ServiceMonitor
+  shell: kubectl apply -f /tmp/argocd-servicemonitor.yaml
+
+- name: Get Grafana admin password
+  shell: |
+    echo "Grafana admin password: admin"
+
+- name: Retrieve Grafana LoadBalancer DNS
+  shell: kubectl get svc -n monitoring grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || true
+  register: grafana_dns
+
+- name: Get Hosted Zone ID for k8s.it.com
+  shell: |
+    aws route53 list-hosted-zones-by-name --dns-name k8s.it.com --query 'HostedZones[0].Id' --output text | cut -d'/' -f3
+  register: hosted_zone_id
+
+- name: Get ALB Zone ID for Grafana
+  shell: |
+    aws elb describe-load-balancers --query 'LoadBalancerDescriptions[?DNSName==`{{ grafana_dns.stdout }}`].CanonicalHostedZoneNameID' --output text
+  register: grafana_alb_zone_id
+
+- name: Create DNS record for Grafana in Route53
+  shell: |
+    cat <<EOF > /tmp/grafana-route53-record.json
+    {
+      "Changes": [{
+        "Action": "UPSERT",
+        "ResourceRecordSet": {
+          "Name": "grafana.k8s.it.com",
+          "Type": "A",
+          "AliasTarget": {
+            "HostedZoneId": "{{ grafana_alb_zone_id.stdout }}",
+            "DNSName": "{{ grafana_dns.stdout }}",
+            "EvaluateTargetHealth": false
+          }
+        }
+      }]
+    }
+    EOF
+    aws route53 change-resource-record-sets --hosted-zone-id {{ hosted_zone_id.stdout }} --change-batch file:///tmp/grafana-route53-record.json
+
+    echo "✅ DNS Record grafana.k8s.it.com configurat!"
+  when:
+    - grafana_dns.stdout != ""
+    - hosted_zone_id.stdout != ""
+    - grafana_alb_zone_id.stdout != ""
+
+- name: Copy NGINX ServiceMonitor
+  copy:
+    src: nginx-servicemonitor.yaml
+    dest: /tmp/nginx-servicemonitor.yaml
+
+- name: Apply NGINX ServiceMonitor
+  shell: kubectl apply -f /tmp/nginx-servicemonitor.yaml

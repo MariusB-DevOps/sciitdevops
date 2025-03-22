@@ -1,0 +1,69 @@
+admin:
+  user: admin
+  password: admin
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+        access: proxy
+        isDefault: true
+
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+dashboards:
+  default: #Or a specific folder name.
+    kubernetes:
+      gnetId: 6417
+      revision: 1
+      datasource: Prometheus
+    argocd:
+      gnetId: 12447
+      revision: 1
+      datasource: Prometheus
+    jenkins:
+      gnetId: 9963
+      revision: 1
+      datasource: Prometheus
+    nginx:
+      gnetId: 10927
+      revision: 1
+      datasource: Prometheus
+    argocd:
+      gnetId: 15386
+      revision: 5
+      datasource: Prometheus
+    nginx2:
+      gnetId: 19974
+      revision: 3
+      datasource: Prometheus
+    nginx3:
+      gnetId: 9964
+      revision: 1
+      datasource: Prometheus
+    nginx4:
+      gnetId: 14900
+      revision: 1
+      datasource: Prometheus
+    nginx5:
+      gnetId: 12930
+      revision: 1
+      datasource: Prometheus
+
+
+service:
+  type: LoadBalancer
