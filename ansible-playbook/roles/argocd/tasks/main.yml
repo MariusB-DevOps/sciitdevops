@@ -1,0 +1,29 @@
+- name: Get EKS cluster name from Terraform output
+  command: "terraform output -raw eks_cluster_name"
+  args:
+    chdir: "{{ eks_dir }}"
+  register: eks_cluster_name
+
+- name: Configure kubectl for EKS cluster
+  command: "aws eks update-kubeconfig --name {{ eks_cluster_name.stdout }} --region eu-west-1"
+
+- name: Initialize Terraform for ArgoCD
+  command: terraform init
+  args:
+    chdir: "{{ argocd_dir }}"
+
+- name: Plan Terraform for ArgoCD
+  command: terraform plan
+  args:
+    chdir: "{{ argocd_dir }}"
+
+- name: Apply Terraform for ArgoCD
+  command: terraform apply -auto-approve
+  args:
+    chdir: "{{ argocd_dir }}"
+  ignore_errors: yes
+
+- name: Verify ArgoCD is running
+  command: "kubectl get pods -n argocd"
+  register: argocd_status
+  failed_when: "'Running' not in argocd_status.stdout"
