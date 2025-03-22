@@ -102,7 +102,7 @@ jobs:
 
       - name: Deploy EKS and networking using Terraform
         run: |
-          ansible-playbook deploy.yaml --tags terraform
+          ansible-playbook deploy.yaml --tags eks
 
       - name: Write Terraform outputs for EKS to params.txt (raw)
         run: |
