@@ -1,0 +1,15 @@
+- name: Initialize Terraform for Jenkins
+  command: terraform init
+  args:
+    chdir: "{{ jenkins_dir }}"
+
+- name: Plan Terraform for Jenkins
+  command: terraform plan
+  args:
+    chdir: "{{ jenkins_dir }}"
+
+- name: Apply Terraform for Jenkins
+  command: terraform apply -auto-approve
+  args:
+    chdir: "{{ jenkins_dir }}"
+  #ignore_errors: yes

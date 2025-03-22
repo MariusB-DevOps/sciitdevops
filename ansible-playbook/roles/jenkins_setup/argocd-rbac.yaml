@@ -1,0 +1,70 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jenkins-argocd-clusterrole
+rules:
+- apiGroups: ["argoproj.io"]
+  resources: ["applications"]
+  verbs: ["get", "patch", "update", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jenkins-argocd-clusterrolebinding
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: jenkins
+roleRef:
+  kind: ClusterRole
+  name: jenkins-argocd-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nginx-ingress-role
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nginx-ingress-rolebinding
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: alb-ingress-controller
+    namespace: jenkins
+roleRef:
+  kind: Role
+  name: nginx-ingress-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-configmap-creator
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: jenkins
+roleRef:
+  kind: Role
+  name: configmap-creator
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configmap-creator
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete"]
