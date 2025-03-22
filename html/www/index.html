@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather App</title>
+    <style>
+        body {
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            color: white;
+            text-shadow: 2px 2px 4px #000000;
+        }
+
+        #weatherResult {
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 20px;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Weather App</h1>
+    <form id="weatherForm">
+        <label for="city">Enter City Name:</label>
+        <input type="text" id="city" name="city" required>
+        <button type="submit">Get Weather</button>
+    </form>
+    <div id="weatherResult"></div>
+
+    <script>
+        document.getElementById('weatherForm').addEventListener('submit', function (event) {
+            event.preventDefault();
+            const city = document.getElementById('city').value;
+            const weatherResult = document.getElementById('weatherResult');
+
+            // ✅ Construim parametrii corect pentru OpenWeatherMap
+            const weatherParams = new URLSearchParams({
+                q: city,
+                appid: '400a3bdbd044f1ce7f5dca894d285b78',
+                units: 'metric'
+            });
+
+            // 🌤️ Fetch pentru datele de vreme
+            fetch(`http://api.openweathermap.org/data/2.5/weather?${weatherParams.toString()}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(weatherData => {
+                    // ✅ Construim parametrii corect pentru Bing
+                    const imageParams = new URLSearchParams({
+                        q: city,
+                        count: 1
+                    });
+
+                    // 🌄 Fetch pentru imaginea de fundal
+                    fetch(`https://api.bing.microsoft.com/v7.0/images/search?${imageParams.toString()}`, {
+                        method: 'GET',
+                        headers: {
+                            'Ocp-Apim-Subscription-Key': '84ec906603864f4d8bef898212f44486'
+                        }
+                    })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! Status: ${response.status}`);
+                            }
+                            return response.json();
+                        })
+                        .then(bingData => {
+                            const imageUrl = bingData.value[0].contentUrl;
+                            document.body.style.backgroundImage = `url(${imageUrl})`;
+
+                            weatherResult.innerHTML = `
+                                    <h2>Weather in ${weatherData.name}</h2>
+                                    <p>Temperature: ${weatherData.main.temp}°C</p>
+                                    <p>Weather: ${weatherData.weather[0].description}</p>
+                                    <p>Humidity: ${weatherData.main.humidity}%</p>
+                                    <p>Pressure: ${weatherData.main.pressure} hPa</p>
+                                    <p>Wind Speed: ${weatherData.wind.speed} m/s</p>
+                                    <p>Wind Direction: ${weatherData.wind.deg}°</p>
+                                    <p>Cloudiness: ${weatherData.clouds.all}%</p>
+                                    <p>Sunrise: ${new Date(weatherData.sys.sunrise * 1000).toLocaleTimeString()}</p>
+                                    <p>Sunset: ${new Date(weatherData.sys.sunset * 1000).toLocaleTimeString()}</p>
+                                `;
+                        })
+                        .catch(error => {
+                            weatherResult.innerHTML = `<p>Error fetching image: ${error.message}</p>`;
+                        });
+                })
+                .catch(error => {
+                    weatherResult.innerHTML = `<p>Error fetching weather: ${error.message}</p>`;
+                });
+        });
+    </script>
+</body>
+</html>
