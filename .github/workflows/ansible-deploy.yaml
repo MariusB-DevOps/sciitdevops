@@ -44,7 +44,7 @@ jobs:
 
       - name: Package environment as artifact
         run: |
-          tar -czf environment.tar.gz /usr/local/bin/kubectl /usr/local/bin/argocd
+          tar -czf environment.tar.gz /usr/local/bin/kubectl /usr/local/bin/terraform /usr/local/bin/argocd
           echo "🔹 Environment packaged."
 
       - name: Upload environment artifact
