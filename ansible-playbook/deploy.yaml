@@ -2,7 +2,7 @@
   hosts: localhost
   become: false
   vars:
-    terraform_dir: "{{ playbook_dir }}/roles/terraform"
+    eks_dir: "{{ playbook_dir }}/roles/eks"
     argocd_dir: "{{ playbook_dir }}/roles/argocd"
     jenkins_dir: "{{ playbook_dir }}/roles/jenkins"
     app_dir: "{{ playbook_dir }}/roles/app"
@@ -15,7 +15,7 @@
     - name: Deploy networking and EKS using Terraform
       import_role:
         name: terraform
-      tags: terraform
+      tags: eks
       
     - name: Deploy ArgoCD using Terraform
       import_role:

@@ -1,0 +1,25 @@
+- name: Initialize Terraform
+  command: terraform init
+  args:
+    chdir: "{{ eks_dir }}"
+
+- name: Plan Terraform
+  command: terraform plan
+  args:
+    chdir: "{{ eks_dir }}"
+
+- name: Apply Terraform
+  command: terraform apply -auto-approve
+  args:
+    chdir: "{{ eks_dir }}"
+
+- name: Check EKS status
+  command: "aws eks describe-cluster --name main-eks-cluster"
+  register: eks_status
+  failed_when: "'ACTIVE' not in eks_status.stdout"
+
+- name: Get Terraform outputs for networking and EKS
+  command: terraform output
+  args:
+    chdir: "{{ eks_dir }}"
+  register: terraform_output
