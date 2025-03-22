@@ -1,0 +1,43 @@
+- name: Retrieve GitHub Repo URL from Secrets Manager
+  shell: >
+    aws secretsmanager get-secret-value --secret-id github_repo_url --query SecretString --output text | jq -r '.GH_REPO_URL'
+  register: repo_url_secret
+  failed_when: repo_url_secret.stdout == ""
+
+- name: Retrieve GitHub Username from Secrets Manager
+  shell: >
+    aws secretsmanager get-secret-value --secret-id github_user --query SecretString --output text | jq -r '.GH_USER'
+  register: github_user_secret
+  failed_when: github_user_secret.stdout == ""
+
+- name: Retrieve GitHub Token from Secrets Manager
+  shell: >
+    aws secretsmanager get-secret-value --secret-id github_token --query SecretString --output text | jq -r '.GH_TOKEN'
+  register: github_token_secret
+  failed_when: github_token_secret.stdout == ""
+
+- name: Retrieve ArgoCD Server Load Balancer from AWS Parameter Store
+  command: >
+    aws ssm get-parameter --name "/argocd/server/loadbalancer" --region "eu-west-1" --query "Parameter.Value" --output text
+  register: argocd_server_lb
+  failed_when: argocd_server_lb.stdout == ""
+
+- name: Login in ArgoCD
+  shell: |
+    set -x  
+    argocd login {{ argocd_server_lb.stdout }} --username admin --password $(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d) --grpc-web-root-path / --skip-test-tls --insecure
+  register: login_status
+  failed_when: "'logged in successfully' not in login_status.stdout"
+
+- name: Debug login status
+  debug:
+    var: login_status.stdout
+
+- name: Add GitHub Repo in ArgoCD
+  shell: >
+    argocd repo add "{{ repo_url_secret.stdout }}" --username "{{ github_user_secret.stdout }}" --password "{{ github_token_secret.stdout }}" --name "my-private-repo" --insecure-skip-server-verification
+  register: repo_add_status
+  failed_when: >
+    repo_add_status.rc != 0 and
+    "'Repository already exists' not in repo_add_status.stdout and
+    'added' not in repo_add_status.stdout"
