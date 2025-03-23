@@ -1,4 +1,17 @@
-﻿# ✅ Retrieve GitHub Repo URL from Secrets Manager
+﻿############################################
+# Creez namespace (cu retry)
+############################################
+- name: Create namespace for Jenkins
+  shell: |
+    kubectl apply -f {{ app_dir }}/namespace.yaml
+  register: namespace_creation
+  until: namespace_creation.rc == 0
+  retries: 5
+  delay: 5
+  tags:
+    - kubernetes
+
+# ✅ Retrieve GitHub Repo URL from Secrets Manager
 - name: Retrieve GitHub Repo URL from Secrets Manager
   shell: >
     aws secretsmanager get-secret-value --secret-id github_repo_url --query SecretString --output text | jq -r '.GH_REPO_URL'
@@ -90,19 +103,6 @@
   delay: 5
   tags:
     - eks
-
-############################################
-# Creez namespace (cu retry)
-############################################
-- name: Create namespace for Jenkins
-  shell: |
-    kubectl apply -f {{ app_dir }}/namespace.yaml
-  register: namespace_creation
-  until: namespace_creation.rc == 0
-  retries: 5
-  delay: 5
-  tags:
-    - kubernetes
 
 ############################################
 # Creez IngressClass (cu retry)

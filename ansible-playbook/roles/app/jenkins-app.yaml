@@ -16,7 +16,13 @@ spec:
           serviceType: ClusterIP
           jenkinsUrl: https://jenkins.k8s.it.com
           installPlugins:
-            - github:1.32.0 
+            - github:1.32.0
+            - kubernetes:1.32.0
+            - workflow-aggregator:2.6
+            - git:4.11.0
+            - configuration-as-code:1.55
+            - credentials-binding:1.27
+            - matrix-auth:2.6.6
           annotations:
             alb.ingress.kubernetes.io/scheme: internet-facing
             alb.ingress.kubernetes.io/target-type: ip
