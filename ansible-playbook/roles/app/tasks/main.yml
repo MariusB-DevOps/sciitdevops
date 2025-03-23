@@ -96,7 +96,7 @@
 ############################################
 - name: Create namespace for Jenkins
   shell: |
-    kubectl apply -f namespace.yaml
+    kubectl apply -f {{ app_dir }}/namespace.yaml
   register: namespace_creation
   until: namespace_creation.rc == 0
   retries: 5
@@ -109,7 +109,7 @@
 ############################################
 - name: Create IngressClass for Jenkins
   shell: |
-    kubectl apply -f ingressclass.yaml
+    kubectl apply -f {{ app_dir }}/ingressclass.yaml
   register: ingressclass_creation
   until: ingressclass_creation.rc == 0
   retries: 5
@@ -122,7 +122,7 @@
 ############################################
 - name: Create Ingress for Jenkins
   shell: |
-    kubectl apply -f ingress.yaml
+    kubectl apply -f {{ app_dir }}/ingress.yaml
   register: ingress_creation
   until: ingress_creation.rc == 0
   retries: 5
@@ -135,7 +135,7 @@
 ############################################
 - name: Deploy Jenkins using Helm
   shell: |
-    kubectl apply -f jenkins-app.yaml
+    kubectl apply -f {{ app_dir }}/jenkins-app.yaml
   register: jenkins_deploy
   until: jenkins_deploy.rc == 0
   retries: 5
