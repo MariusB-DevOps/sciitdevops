@@ -1,129 +1,167 @@
 #!/bin/bash
 
-############################################
-# Preluăm lista de instanțe EC2
-############################################
-instance_ids=$(aws ec2 describe-instances --query "Reservations[].Instances[].[InstanceId]" --output text)
+set -e
+
+MAX_RETRIES=5
+SLEEP_TIME=5
 
 ############################################
-# Dacă nu sunt instanțe, afișăm un mesaj și ieșim
+# Extragem IP-urile instanțelor EC2 (cu retry)
 ############################################
+attempt=0
+INSTANCE_IPS=""
+while [[ -z "$INSTANCE_IPS" && $attempt -lt $MAX_RETRIES ]]; do
+  echo "🔎 Încercare $((attempt + 1))/$MAX_RETRIES: Preiau IP-urile instanțelor EC2..."
+  INSTANCE_IPS=$(aws ec2 describe-instances --filters "Name=tag:eks:cluster-name,Values=main-eks-cluster" --query "Reservations[].Instances[].PrivateIpAddress" --output text | tr -d '\n' | tr -s ' ')
+  
+  if [[ -z "$INSTANCE_IPS" ]]; then
+    echo "⚠️ Nu s-au găsit IP-uri pentru instanțele EC2. Retry în $SLEEP_TIME secunde..."
+    sleep $SLEEP_TIME
+    attempt=$((attempt + 1))
+  fi
+done
 
-if [ -z "$instance_ids" ]; then
-  echo "Nu s-au găsit instanțe EC2."
+if [[ -z "$INSTANCE_IPS" ]]; then
+  echo "❌ Eroare: Nu s-au găsit IP-uri după $MAX_RETRIES încercări."
   exit 1
 fi
 
 ############################################
-# Modificăm IMDS pentru fiecare instanță
+# Scriem în fișier IP-urile instanțelor
 ############################################
-
-for instance_id in $instance_ids; do
-  echo "Activăm IMDS pentru instanța EC2: $instance_id"
-  aws ec2 modify-instance-metadata-options --instance-id $instance_id --http-endpoint enabled --http-put-response-hop-limit 2 --http-tokens optional
-done
-
-echo "IMDS a fost activat pe toate instanțele EC2."
-
-
-# Extragem IP-urile instanțelor EC2 asociate clusterului EKS
-INSTANCE_IPS=$(aws ec2 describe-instances --filters "Name=tag:eks:cluster-name,Values=main-eks-cluster" --query "Reservations[].Instances[].PrivateIpAddress" --output text)
-
 PARAMS_FILE="../../params.txt"
-
-if [ ! -z "$INSTANCE_IPS" ]; then
-  echo "### Jenkins Instances ###" >> "$PARAMS_FILE"
-  for IP in $INSTANCE_IPS; do
-    echo "INSTANCE_IP=$IP" >> "$PARAMS_FILE"
-  done
-  echo "########################" >> "$PARAMS_FILE"
-else
-  echo "⚠️ Nu s-au găsit instanțe asociate clusterului EKS."
-fi
-
+echo "### Jenkins Instances ###" >> "$PARAMS_FILE"
+for IP in $INSTANCE_IPS; do
+  echo "INSTANCE_IP=$IP" >> "$PARAMS_FILE"
+done
+echo "########################" >> "$PARAMS_FILE"
 
 ############################################
-# Preluam config cluster eks
+# Actualizare config cluster EKS (cu retry)
 ############################################
-
-echo "Actualizare config cluster eks."
-aws eks --region eu-west-1 update-kubeconfig --name main-eks-cluster
-
-############################################
-# Creez namespace pentru jenkins
-############################################
-
-echo "Creez namespace pentru jenkins"
-kubectl apply -f namespace.yaml
-
-############################################
-# Creez Ingress pentru jenkins
-############################################
-
-echo "Creez IngressClass pentru jenkins"
-kubectl apply -f ingressclass.yaml
-
-############################################
-# Creez IngressClass pentru jenkins
-############################################
-
-echo "Creez Ingress pentru jenkins"
-kubectl apply -f ingress.yaml
-
-############################################
-# Deploy jenkins
-############################################
-
-echo "Fac deploy de jenkins"
-kubectl apply -f jenkins-app.yaml
-
-############################################
-#Extrag IP-urile pod-urilor Jenkins
-############################################
-
-MAX_RETRIES=10
-RETRY_INTERVAL=30
 attempt=0
-POD_IPS=""
-
-while [[ -z "$POD_IPS" && $attempt -lt $MAX_RETRIES ]]; do
-  echo "Verificare IP-uri pentru pod-ul Jenkins (încercare $((attempt + 1)) din $MAX_RETRIES)..."
-  
-  POD_IPS=$(kubectl get pod -n jenkins -l app.kubernetes.io/name=jenkins -o jsonpath='{.items[*].status.podIP}')
-  
-  if [[ -z "$POD_IPS" ]]; then
+while [[ $attempt -lt $MAX_RETRIES ]]; do
+  echo "🔧 Actualizez config cluster EKS (încercare $((attempt + 1)))"
+  if aws eks --region eu-west-1 update-kubeconfig --name main-eks-cluster; then
+    echo "✅ Config cluster actualizată"
+    break
+  else
+    echo "⚠️ Eroare actualizare cluster. Retry în $SLEEP_TIME secunde..."
+    sleep $SLEEP_TIME
     attempt=$((attempt + 1))
-    if [[ $attempt -lt $MAX_RETRIES ]]; then
-      echo "Pod-ul Jenkins nu are IP încă. Așteptăm $RETRY_INTERVAL secunde înainte de o nouă încercare..."
-      sleep $RETRY_INTERVAL
-    else
-      echo "❌ Eroare: Nu am putut obține IP-urile pentru pod-ul Jenkins după $MAX_RETRIES încercări."
-      exit 1
-    fi
   fi
 done
 
-echo "✅ IP-uri pentru pod-ul Jenkins obținute: $POD_IPS"
+if [[ $attempt -eq $MAX_RETRIES ]]; then
+  echo "❌ Eroare: Config cluster EKS nu a putut fi actualizată."
+  exit 1
+fi
 
 ############################################
-#POD_IPS=$(kubectl get pod -n jenkins -l app.kubernetes.io/name=jenkins -o jsonpath='{.items[*].status.podIP}')
+# Creez namespace (cu retry)
+############################################
+attempt=0
+while [[ $attempt -lt $MAX_RETRIES ]]; do
+  echo "🔧 Creez namespace (încercare $((attempt + 1)))"
+  if kubectl apply -f namespace.yaml; then
+    echo "✅ Namespace creat"
+    break
+  else
+    echo "⚠️ Eroare creare namespace. Retry în $SLEEP_TIME secunde..."
+    sleep $SLEEP_TIME
+    attempt=$((attempt + 1))
+  fi
+done
+
+if [[ $attempt -eq $MAX_RETRIES ]]; then
+  echo "❌ Eroare: Namespace nu a putut fi creat după $MAX_RETRIES încercări."
+  exit 1
+fi
 
 ############################################
-# Extragem ARN-ul target group-ului
+# Creez IngressClass (cu retry)
 ############################################
+attempt=0
+while [[ $attempt -lt $MAX_RETRIES ]]; do
+  echo "🔧 Creez IngressClass (încercare $((attempt + 1)))"
+  if kubectl apply -f ingressclass.yaml; then
+    echo "✅ IngressClass creat"
+    break
+  else
+    echo "⚠️ Eroare creare IngressClass. Retry în $SLEEP_TIME secunde..."
+    sleep $SLEEP_TIME
+    attempt=$((attempt + 1))
+  fi
+done
 
-TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups --query 'TargetGroups[?TargetGroupName==`jenkins-tg`].TargetGroupArn' --output text 2>/dev/null || true)
+if [[ $attempt -eq $MAX_RETRIES ]]; then
+  echo "❌ Eroare: IngressClass nu a putut fi creat după $MAX_RETRIES încercări."
+  exit 1
+fi
 
 ############################################
-# Crează lista de targets pentru LB
+# Creez Ingress (cu retry)
 ############################################
+attempt=0
+while [[ $attempt -lt $MAX_RETRIES ]]; do
+  echo "🔧 Creez Ingress (încercare $((attempt + 1)))"
+  if kubectl apply -f ingress.yaml; then
+    echo "✅ Ingress creat"
+    break
+  else
+    echo "⚠️ Eroare creare Ingress. Retry în $SLEEP_TIME secunde..."
+    sleep $SLEEP_TIME
+    attempt=$((attempt + 1))
+  fi
+done
 
-echo "Creez lista de targets pentru LB"
-TARGETS=$(echo $POD_IPS | xargs -n 1 -I {} echo "Id={}")
+if [[ $attempt -eq $MAX_RETRIES ]]; then
+  echo "❌ Eroare: Ingress nu a putut fi creat după $MAX_RETRIES încercări."
+  exit 1
+fi
 
 ############################################
-# Înregistrează toate IP-urile în target group  
+# Deploy Jenkins (cu retry)
 ############################################
+attempt=0
+while [[ $attempt -lt $MAX_RETRIES ]]; do
+  echo "🚀 Fac deploy de Jenkins (încercare $((attempt + 1)))"
+  if kubectl apply -f jenkins-app.yaml; then
+    echo "✅ Jenkins a fost deployat"
+    break
+  else
+    echo "⚠️ Eroare deploy Jenkins. Retry în $SLEEP_TIME secunde..."
+    sleep $SLEEP_TIME
+    attempt=$((attempt + 1))
+  fi
+done
 
-echo "Aplic targets pe LB"
-aws elbv2 register-targets --target-group-arn $TARGET_GROUP_ARN --targets $TARGETS
+if [[ $attempt -eq $MAX_RETRIES ]]; then
+  echo "❌ Eroare: Jenkins nu a putut fi deployat după $MAX_RETRIES încercări."
+  exit 1
+fi
+
+############################################
+# Înregistrare target-uri în LB (cu retry)
+############################################
+attempt=0
+TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups --query 'TargetGroups[?TargetGroupName==`jenkins-tg`].TargetGroupArn' --output text)
+
+while [[ $attempt -lt $MAX_RETRIES ]]; do
+  echo "🔧 Înregistrez target-uri în LB (încercare $((attempt + 1)))"
+  TARGETS=$(echo $POD_IPS | xargs -n 1 -I {} echo "Id={}")
+  
+  if aws elbv2 register-targets --target-group-arn $TARGET_GROUP_ARN --targets $TARGETS; then
+    echo "✅ Target-uri înregistrate în LB"
+    break
+  else
+    echo "⚠️ Eroare înregistrare target-uri. Retry în $SLEEP_TIME secunde..."
+    sleep $SLEEP_TIME
+    attempt=$((attempt + 1))
+  fi
+done
+
+if [[ $attempt -eq $MAX_RETRIES ]]; then
+  echo "❌ Eroare: Înregistrarea target-urilor în LB a eșuat după $MAX_RETRIES încercări."
+  exit 1
+fi

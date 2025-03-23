@@ -52,6 +52,15 @@ resource "helm_release" "argocd" {
     name  = "server.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
     value = "nlb"
   }
+    force_update = false
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      set,
+      version
+    ]
+  }
 }
 
 

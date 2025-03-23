@@ -77,6 +77,11 @@ resource "aws_security_group" "jenkins_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"] # Allow all outbound traffic
   }
+
+    lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [ingress, egress]
+  }
 }
 
 ############################################
@@ -91,6 +96,11 @@ resource "aws_lb" "jenkins_alb" {
   subnets            = data.terraform_remote_state.terraform.outputs.subnet_ids
 
   enable_deletion_protection = false
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [name, subnets]
+  }
 }
 
 resource "aws_lb_target_group" "jenkins_tg" {
@@ -106,6 +116,11 @@ resource "aws_lb_target_group" "jenkins_tg" {
     timeout             = 5
     healthy_threshold   = 2
     unhealthy_threshold = 2
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [health_check]
   }
 }
 
@@ -163,6 +178,11 @@ resource "helm_release" "aws_ebs_csi_driver" {
   set {
     name  = "controller.serviceAccount.name"
     value = "ebs-csi-controller"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [set]
   }
 }
 

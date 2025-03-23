@@ -26,6 +26,11 @@ resource "aws_vpc" "main" {
   tags = {
     Name = "main-vpc"
   }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [tags]
+  }
 }
 
 resource "aws_subnet" "public_subnet" {
@@ -38,6 +43,11 @@ resource "aws_subnet" "public_subnet" {
   tags = {
     Name                     = "public-subnet-${count.index}"
     "kubernetes.io/role/elb" = "1"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [tags]
   }
 }
 
@@ -78,19 +88,22 @@ resource "aws_eks_cluster" "main" {
   role_arn = aws_iam_role.eks_cluster_role.arn
   version  = "1.32"
 
-  access_config {
-    bootstrap_cluster_creator_admin_permissions = true
-  }
   vpc_config {
     subnet_ids             = aws_subnet.public_subnet.*.id
     endpoint_public_access = true
     security_group_ids = [aws_security_group.eks_node_sg.id]
   }
 
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [version, vpc_config]
+  }
+
   tags = {
     Name = "main-eks-cluster"
   }
 }
+
 
 resource "aws_security_group" "eks_node_sg" {
   name        = "eks-node-sg"
@@ -159,6 +172,11 @@ resource "aws_eks_node_group" "main" {
     min_size     = 1
   }
 
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [scaling_config]
+  }
+
   tags = {
     Name = "main-eks-node-group"
   }
@@ -199,6 +217,11 @@ EOF
 
   tags = {
     Name = "eks-role"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [tags]
   }
 }
 
@@ -418,6 +441,11 @@ resource "aws_iam_openid_connect_provider" "eks_oidc" {
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
   url             = data.aws_eks_cluster.main.identity[0].oidc[0].issuer
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [client_id_list, thumbprint_list]
+  }
 }
 
 resource "aws_iam_role" "alb_controller" {
@@ -440,6 +468,10 @@ resource "aws_iam_role" "alb_controller" {
       }
     ]
   })
+    lifecycle {
+    prevent_destroy = true
+    ignore_changes = [assume_role_policy]
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "alb_controller_attachment" {
@@ -491,8 +523,16 @@ resource "null_resource" "enable_imds_on_nodes" {
   for_each = toset(data.aws_instances.eks_nodes.ids)
 
   provisioner "local-exec" {
-    command = "aws ec2 modify-instance-metadata-options --instance-id ${each.value} --http-endpoint enabled --http-put-response-hop-limit 2 --http-tokens optional"
+    command = <<EOT
+    status=$(aws ec2 describe-instances --instance-ids ${each.value} --query "Reservations[].Instances[].MetadataOptions.HttpEndpoint" --output text)
+    if [[ "$status" != "enabled" ]]; then
+      aws ec2 modify-instance-metadata-options --instance-id ${each.value} --http-endpoint enabled --http-put-response-hop-limit 2 --http-tokens optional
+    else
+      echo "IMDS already enabled for instance ${each.value}"
+    fi
+    EOT
   }
 
   depends_on = [aws_eks_node_group.main]
 }
+
