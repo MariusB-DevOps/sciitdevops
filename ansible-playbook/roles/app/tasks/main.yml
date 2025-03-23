@@ -197,23 +197,6 @@
 ############################################
 # Output pentru debugging
 ############################################
-- name: Show Target Group Health Status
-  debug:
-    msg: "{{ target_health.stdout }}"
-  tags:
-    - alb
-
-- name: Show Jenkins Pod IPs
-  debug:
-    msg: "{{ pod_ips.stdout }}"
-  tags:
-    - jenkins
-
-- name: Show Instance IPs
-  debug:
-    msg: "{{ instance_ips.stdout }}"
-  tags:
-    - eks
 
 - name: Verify Jenkins is accessible
   command: "kubectl get ingress -n jenkins"
