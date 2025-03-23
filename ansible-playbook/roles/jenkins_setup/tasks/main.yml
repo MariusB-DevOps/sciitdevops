@@ -23,11 +23,6 @@
   register: github_token
   failed_when: github_token.stdout == ""
 
-# ✅ Adaugam permisiuni pentru nginx
-- name: Adaugam permisiuni pentru nginx
-  shell: >
-    kubectl apply -f {{ jenkins_setup_dir }}/argocd-rbac.yaml
-
 # ✅ Setăm DNS-ul Jenkins ALB din Route 53
 - name: Setăm DNS-ul Jenkins ALB din Route 53
   set_fact:
@@ -77,7 +72,7 @@
     dest: "/tmp/jenkins-cli.jar"
   register: download_jenkins_cli
   until: download_jenkins_cli is succeeded
-  retries: 10              # 🔥 Încearcă de 5 ori
+  retries: 10              # 🔥 Încearcă de 10 ori
   delay: 10               # 🔥 Așteaptă 10 secunde între retry-uri
 
 - name: Download GitHub plugin
@@ -86,7 +81,7 @@
     dest: "/tmp/github.hpi"
   register: download_github_plugin
   until: download_github_plugin is succeeded
-  retries: 10              # 🔥 Încearcă de 5 ori
+  retries: 10              # 🔥 Încearcă de 10 ori
   delay: 10               # 🔥 Așteaptă 10 secunde între retry-uri
 
 - name: Install GitHub plugin
@@ -97,7 +92,7 @@
     JENKINS_PASSWORD: "{{ jenkins_password }}"
   register: install_github_plugin
   until: install_github_plugin.rc == 0
-  retries: 10              # 🔥 Încearcă de 5 ori dacă Jenkins nu răspunde
+  retries: 10              # 🔥 Încearcă de 10 ori dacă Jenkins nu răspunde
   delay: 10               # 🔥 Așteaptă 10 secunde între încercări
 
 - name: Wait for Jenkins to come back online
@@ -108,7 +103,7 @@
     validate_certs: no
   register: result
   until: result.status == 200
-  retries: 15 # Încearcă de 30 de ori (~5 minute)
+  retries: 15 # Încearcă de 15 de ori (~5 minute)
   delay: 20   # Așteaptă 20 secunde între încercări
 
 # ✅ Creează job-ul Jenkins (pe HTTPS prin ALB)
