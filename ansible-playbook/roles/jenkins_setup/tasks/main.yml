@@ -34,77 +34,93 @@
     kubectl get secret jenkins -n jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 --decode
   register: jenkins_password
  
+# ✅ Creează secret în Kubernetes
+- name: Create Kubernetes secret for GitHub credentials
+  shell: >
+    kubectl create secret generic secret-credentials \
+      --from-literal=github-username="{{ github_user.stdout }}" \
+      --from-literal=github-password="{{ github_token.stdout }}" \
+      -n jenkins --dry-run=client -o yaml | kubectl apply -f -
+
+# ✅ Verifică dacă secretul există
+- name: Check if Kubernetes secret exists
+  shell: >
+    kubectl get secret secret-credentials -n jenkins -o jsonpath='{.data}'
+  register: secret_check
+  failed_when: secret_check.stdout == ""
+  changed_when: false
+
 # ✅ Adaugă credentialele GitHub în Jenkins (pe HTTPS prin ALB)
-- name: Creează script-ul pentru credentiale
-  copy:
-    dest: "/tmp/add_credentials.sh"
-    content: |
-      #!/bin/bash
-      JENKINS_URL="{{ jenkins_url | regex_replace('https://', '') }}"
-      JENKINS_USER="admin"
-      JENKINS_PASSWORD="{{ jenkins_password.stdout }}"
-      GITHUB_TOKEN="{{ github_token.stdout }}"
-      GITHUB_USER="{{ github_user.stdout }}"
+#- name: Creează script-ul pentru credentiale
+#  copy:
+#    dest: "/tmp/add_credentials.sh"
+#    content: |
+#      #!/bin/bash
+#      JENKINS_URL="{{ jenkins_url | regex_replace('https://', '') }}"
+#      JENKINS_USER="admin"
+#      JENKINS_PASSWORD="{{ jenkins_password.stdout }}"
+#      GITHUB_TOKEN="{{ github_token.stdout }}"
+#      GITHUB_USER="{{ github_user.stdout }}"#
+#
+#      curl -k -L -X POST "https://$JENKINS_USER:$JENKINS_PASSWORD@$JENKINS_URL/credentials/store/system/domain/_/createCredentials" \
+#        -H "Content-Type: multipart/form-data" \
+#        -F "json={\"\": \"0\", \"credentials\": {\"scope\": \"GLOBAL\", \"id\": \"github-token\", \"username\": \"$GITHUB_USER\", \"password\": \"$GITHUB_TOKEN\", \"description\": \"GitHub Credentials for Jenkins\", \"\$class\": \"com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl\"}}"
+#  register: script_creation
 
-      curl -k -L -X POST "https://$JENKINS_USER:$JENKINS_PASSWORD@$JENKINS_URL/credentials/store/system/domain/_/createCredentials" \
-        -H "Content-Type: multipart/form-data" \
-        -F "json={\"\": \"0\", \"credentials\": {\"scope\": \"GLOBAL\", \"id\": \"github-token\", \"username\": \"$GITHUB_USER\", \"password\": \"$GITHUB_TOKEN\", \"description\": \"GitHub Credentials for Jenkins\", \"\$class\": \"com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl\"}}"
-  register: script_creation
+#- name: Fă script-ul executabil
+#  file:
+#    path: "/tmp/add_credentials.sh"
+#    mode: '0755'
 
-- name: Fă script-ul executabil
-  file:
-    path: "/tmp/add_credentials.sh"
-    mode: '0755'
-
-- name: Rulează script-ul pentru adăugarea credentialelor
-  script: /tmp/add_credentials.sh
-  register: jenkins_credentials_response
+#- name: Rulează script-ul pentru adăugarea credentialelor
+#  script: /tmp/add_credentials.sh
+#  register: jenkins_credentials_response
 
 # ✅ Setam permisiuni pentru service account-ul Jenkins
-- name: Obține parola Jenkins din Kubernetes
+- name: Setam permisiuni pentru service account-ul Jenkins
   shell: >
     kubectl apply -f {{ jenkins_setup_dir }}/argocd-rbac.yaml
 
 # ✅ Instalează plugin-ul GitHub în Jenkins folosind jenkins-cli
-- name: Download Jenkins CLI jar
-  get_url:
-    url: "https://jenkins.k8s.it.com/jnlpJars/jenkins-cli.jar"
-    dest: "/tmp/jenkins-cli.jar"
-  register: download_jenkins_cli
-  until: download_jenkins_cli is succeeded
-  retries: 10              # 🔥 Încearcă de 10 ori
-  delay: 10               # 🔥 Așteaptă 10 secunde între retry-uri
+#- name: Download Jenkins CLI jar
+#  get_url:
+#    url: "https://jenkins.k8s.it.com/jnlpJars/jenkins-cli.jar"
+#    dest: "/tmp/jenkins-cli.jar"
+#  register: download_jenkins_cli
+#  until: download_jenkins_cli is succeeded
+#  retries: 10              # 🔥 Încearcă de 10 ori
+#  delay: 10               # 🔥 Așteaptă 10 secunde între retry-uri
 
-- name: Download GitHub plugin
-  get_url:
-    url: "https://updates.jenkins.io/download/plugins/github/1.42.0/github.hpi"
-    dest: "/tmp/github.hpi"
-  register: download_github_plugin
-  until: download_github_plugin is succeeded
-  retries: 10              # 🔥 Încearcă de 10 ori
-  delay: 10               # 🔥 Așteaptă 10 secunde între retry-uri
+#- name: Download GitHub plugin
+#  get_url:
+#    url: "https://updates.jenkins.io/download/plugins/github/1.42.0/github.hpi"
+#    dest: "/tmp/github.hpi"
+#  register: download_github_plugin
+#  until: download_github_plugin is succeeded
+#  retries: 10              # 🔥 Încearcă de 10 ori
+#  delay: 10               # 🔥 Așteaptă 10 secunde între retry-uri
 
-- name: Install GitHub plugin
-  shell: |
-    java -jar /tmp/jenkins-cli.jar -s https://jenkins.k8s.it.com -auth "admin:{{ jenkins_password.stdout }}" install-plugin github -restart
-  environment:
-    JENKINS_USER: "admin"
-    JENKINS_PASSWORD: "{{ jenkins_password }}"
-  register: install_github_plugin
-  until: install_github_plugin.rc == 0
-  retries: 10              # 🔥 Încearcă de 10 ori dacă Jenkins nu răspunde
-  delay: 10               # 🔥 Așteaptă 10 secunde între încercări
+#- name: Install GitHub plugin
+#  shell: |
+#    java -jar /tmp/jenkins-cli.jar -s https://jenkins.k8s.it.com -auth "admin:{{ jenkins_password.stdout }}" install-plugin github -restart
+#  environment:
+#    JENKINS_USER: "admin"
+#    JENKINS_PASSWORD: "{{ jenkins_password }}"
+#  register: install_github_plugin
+#  until: install_github_plugin.rc == 0
+#  retries: 10              # 🔥 Încearcă de 10 ori dacă Jenkins nu răspunde
+#  delay: 10               # 🔥 Așteaptă 10 secunde între încercări
 
-- name: Wait for Jenkins to come back online
-  uri:
-    url: "https://jenkins.k8s.it.com/login"
-    method: GET
-    status_code: 200
-    validate_certs: no
-  register: result
-  until: result.status == 200
-  retries: 15 # Încearcă de 15 de ori (~5 minute)
-  delay: 20   # Așteaptă 20 secunde între încercări
+#- name: Wait for Jenkins to come back online
+#  uri:
+#    url: "https://jenkins.k8s.it.com/login"
+#    method: GET
+#    status_code: 200
+#    validate_certs: no
+#  register: result
+#  until: result.status == 200
+#  retries: 15 # Încearcă de 15 de ori (~5 minute)
+#  delay: 20   # Așteaptă 20 secunde între încercări
 
 # ✅ Creează job-ul Jenkins (pe HTTPS prin ALB)
 - name: Creează job-ul Jenkins folosind curl

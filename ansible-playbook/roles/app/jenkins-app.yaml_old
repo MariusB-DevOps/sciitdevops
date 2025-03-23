@@ -22,29 +22,6 @@ spec:
             alb.ingress.kubernetes.io/target-type: ip
             alb.ingress.kubernetes.io/group.name: jenkins-alb
             kubernetes.io/ingress.class: alb
-
-          # ✅ Adăugare credentiale prin JCasC
-          existingSecret: secret-credentials
-          additionalExistingSecrets:
-            - name: secret-credentials
-              keyName: github-username
-            - name: secret-credentials
-              keyName: github-password
-
-          JCasC:
-            configScripts:
-              credentials-config: |
-                credentials:
-                  system:
-                    domainCredentials:
-                    - credentials:
-                      - usernamePassword:
-                          description: "GitHub access username password"
-                          id: "github-token"
-                          password: ${secret-credentials-github-password}
-                          scope: GLOBAL
-                          username: ${secret-credentials-github-username}
-
         ingress:
           enabled: true
           ingressClassName: alb
