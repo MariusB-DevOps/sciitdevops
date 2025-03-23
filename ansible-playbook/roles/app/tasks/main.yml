@@ -165,8 +165,15 @@
     - alb
 
 - name: Register Jenkins pods to target group
-  shell: >
-    aws elbv2 register-targets --target-group-arn {{ target_group_arn.stdout }} --targets {{ pod_ips.stdout.split() | map('regex_replace', '^(.*)$', 'Id=\\1') | join(' ') }}
+  shell: |
+    if [ -n "{{ pod_ips.stdout }}" ]; then
+      TARGETS=$(echo '{{ pod_ips.stdout }}' | tr ' ' '\n' | jq -R -s -c 'split("\n") | map(select(length > 0) | {Id: .})')
+      echo "📌 Registering targets: $TARGETS"
+      aws elbv2 register-targets --target-group-arn {{ target_group_arn.stdout }} --targets "$TARGETS"
+    else
+      echo "❌ No Jenkins pod IPs found!"
+      exit 1
+    fi
   register: target_register
   until: target_register.rc == 0
   retries: 5
