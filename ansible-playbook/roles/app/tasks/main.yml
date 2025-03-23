@@ -50,15 +50,163 @@
   failed_when: secret_check.stdout == ""
   changed_when: false
 
-- name: Set executable permissions on target.sh
-  command: chmod +x ./target.sh
-  args:
-    chdir: "{{ app_dir }}"
+############################################
+# Extragem IP-urile instanțelor EC2 (cu retry)
+############################################
+- name: Extract EC2 Instance IPs
+  shell: >
+    aws ec2 describe-instances --filters "Name=tag:eks:cluster-name,Values=main-eks-cluster" --query "Reservations[].Instances[].PrivateIpAddress" --output text | tr -d '\n' | tr -s ' '
+  register: instance_ips
+  until: instance_ips.stdout != ""
+  retries: 5
+  delay: 5
+  failed_when: instance_ips.stdout == ""
+  changed_when: false
+  tags:
+    - eks
 
-- name: Run target.sh script to deploy Jenkins
-  command: "./target.sh"
-  args:
-    chdir: "{{ app_dir }}"
+- name: Write instance IPs to params.txt
+  copy:
+    dest: "../../params.txt"
+    content: |
+      ### Jenkins Instances ###
+      {% for ip in instance_ips.stdout.split() %}
+      INSTANCE_IP={{ ip }}
+      {% endfor %}
+      ########################
+  when: instance_ips.stdout != ""
+  tags:
+    - eks
+
+############################################
+# Actualizare config cluster EKS (cu retry)
+############################################
+- name: Update kubeconfig for EKS cluster
+  shell: >
+    aws eks --region eu-west-1 update-kubeconfig --name main-eks-cluster
+  register: eks_update
+  until: eks_update.rc == 0
+  retries: 5
+  delay: 5
+  tags:
+    - eks
+
+############################################
+# Creez namespace (cu retry)
+############################################
+- name: Create namespace for Jenkins
+  shell: |
+    kubectl apply -f namespace.yaml
+  register: namespace_creation
+  until: namespace_creation.rc == 0
+  retries: 5
+  delay: 5
+  tags:
+    - kubernetes
+
+############################################
+# Creez IngressClass (cu retry)
+############################################
+- name: Create IngressClass for Jenkins
+  shell: |
+    kubectl apply -f ingressclass.yaml
+  register: ingressclass_creation
+  until: ingressclass_creation.rc == 0
+  retries: 5
+  delay: 5
+  tags:
+    - kubernetes
+
+############################################
+# Creez Ingress (cu retry)
+############################################
+- name: Create Ingress for Jenkins
+  shell: |
+    kubectl apply -f ingress.yaml
+  register: ingress_creation
+  until: ingress_creation.rc == 0
+  retries: 5
+  delay: 5
+  tags:
+    - kubernetes
+
+############################################
+# Deploy Jenkins (cu retry)
+############################################
+- name: Deploy Jenkins using Helm
+  shell: |
+    kubectl apply -f jenkins-app.yaml
+  register: jenkins_deploy
+  until: jenkins_deploy.rc == 0
+  retries: 5
+  delay: 5
+  tags:
+    - jenkins
+
+############################################
+# Înregistrare target-uri în LB (cu retry)
+############################################
+- name: Get Target Group ARN
+  shell: >
+    aws elbv2 describe-target-groups --query 'TargetGroups[?TargetGroupName==`jenkins-tg`].TargetGroupArn' --output text
+  register: target_group_arn
+  failed_when: target_group_arn.stdout == ""
+  tags:
+    - alb
+
+- name: Get Jenkins Pod IP
+  shell: >
+    kubectl get pod -n jenkins -o jsonpath='{.items[*].status.podIP}'
+  register: pod_ips
+  until: pod_ips.stdout != ""
+  retries: 5
+  delay: 5
+  tags:
+    - alb
+
+- name: Register Jenkins pods to target group
+  shell: >
+    aws elbv2 register-targets --target-group-arn {{ target_group_arn.stdout }} --targets {{ pod_ips.stdout.split() | map('regex_replace', '^(.*)$', 'Id=\\1') | join(' ') }}
+  register: target_register
+  until: target_register.rc == 0
+  retries: 5
+  delay: 5
+  tags:
+    - alb
+
+############################################
+# Health Check pentru Target Group
+############################################
+- name: Check Target Group health
+  shell: >
+    aws elbv2 describe-target-health --target-group-arn {{ target_group_arn.stdout }}
+  register: target_health
+  until: '"healthy" in target_health.stdout'
+  retries: 5
+  delay: 10
+  tags:
+    - alb
+
+############################################
+# Output pentru debugging
+############################################
+- name: Show Target Group Health Status
+  debug:
+    msg: "{{ target_health.stdout }}"
+  tags:
+    - alb
+
+- name: Show Jenkins Pod IPs
+  debug:
+    msg: "{{ pod_ips.stdout }}"
+  tags:
+    - jenkins
+
+- name: Show Instance IPs
+  debug:
+    msg: "{{ instance_ips.stdout }}"
+  tags:
+    - eks
 
 - name: Verify Jenkins is accessible
   command: "kubectl get ingress -n jenkins"
