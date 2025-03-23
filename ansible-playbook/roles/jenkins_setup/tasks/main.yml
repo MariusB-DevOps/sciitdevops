@@ -25,6 +25,17 @@
 #  script: /tmp/add_credentials.sh
 #  register: jenkins_credentials_response
 
+# ✅ Setăm DNS-ul Jenkins ALB din Route 53
+- name: Setăm DNS-ul Jenkins ALB din Route 53
+  set_fact:
+    jenkins_url: "https://jenkins.k8s.it.com"
+
+# ✅ Obținem parola Jenkins din Kubernetes
+- name: Obține parola Jenkins din Kubernetes
+  shell: >
+    kubectl get secret jenkins -n jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 --decode
+  register: jenkins_password
+
 # ✅ Setam permisiuni pentru service account-ul Jenkins
 - name: Setam permisiuni pentru service account-ul Jenkins
   shell: >
