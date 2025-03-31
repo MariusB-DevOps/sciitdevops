@@ -1,0 +1,81 @@
+##############################
+# Add Helm Repositories
+##############################
+
+- name: Add Helm repo for Prometheus and Grafana
+  shell: |
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm repo add grafana https://grafana.github.io/helm-charts
+    helm repo update
+
+##############################
+# Copy Values Files for Helm Charts
+##############################
+
+- name: Copy Prometheus values file
+  copy:
+    src: prometheus-values.yaml
+    dest: /tmp/prometheus-values.yaml
+
+- name: Copy Grafana values file
+  copy:
+    src: grafana-values.yaml
+    dest: /tmp/grafana-values.yaml
+
+##############################
+# Deploy Prometheus and Grafana with Helm
+##############################
+
+- name: Deploy Prometheus in AKS
+  shell: |
+    helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+      --namespace monitoring --create-namespace \
+      --values /tmp/prometheus-values.yaml
+
+- name: Deploy Grafana in AKS
+  shell: |
+    helm upgrade --install grafana grafana/grafana \
+      --namespace monitoring \
+      --values /tmp/grafana-values.yaml
+
+##############################
+# Apply ServiceMonitors for Jenkins, ArgoCD, and NGINX
+##############################
+
+- name: Copy Jenkins ServiceMonitor
+  copy:
+    src: jenkins-servicemonitor.yaml
+    dest: /tmp/jenkins-servicemonitor.yaml
+
+- name: Copy ArgoCD ServiceMonitor
+  copy:
+    src: argocd-servicemonitor.yaml
+    dest: /tmp/argocd-servicemonitor.yaml
+
+- name: Copy NGINX ServiceMonitor
+  copy:
+    src: nginx-servicemonitor.yaml
+    dest: /tmp/nginx-servicemonitor.yaml
+
+- name: Apply Jenkins ServiceMonitor
+  shell: kubectl apply -f /tmp/jenkins-servicemonitor.yaml
+
+- name: Apply ArgoCD ServiceMonitor
+  shell: kubectl apply -f /tmp/argocd-servicemonitor.yaml
+
+- name: Apply NGINX ServiceMonitor
+  shell: kubectl apply -f /tmp/nginx-servicemonitor.yaml
+
+##############################
+### GRAFANA INFO OUTPUT
+##############################
+
+- name: Get Grafana LoadBalancer IP
+  shell: |
+    kubectl get svc -n monitoring grafana -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+  register: grafana_ip
+
+- name: Get Grafana admin password
+  shell: |
+    kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode
+  register: grafana_password

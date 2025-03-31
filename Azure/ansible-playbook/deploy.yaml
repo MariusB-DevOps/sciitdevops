@@ -1,0 +1,55 @@
+- name: Deploy to AKS
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    keyvault_name: my-keyvault-name
+    hosted_zone_id: "{{ lookup('env', 'HOSTED_ZONE_ID') }}"
+
+  tasks:
+    ############################################
+    # 1️⃣ Deploy ArgoCD
+    ############################################
+    - name: ArgoCD Setup
+      import_role:
+        name: argocd
+      tags: 
+        - argocd
+
+    ############################################
+    # 2️⃣ Deploy Jenkins App (via ArgoCD)
+    ############################################
+    - name: Jenkins Setup
+      import_role:
+        name: jenkins
+      tags:
+        - jenkins
+
+    ############################################
+    # 3️⃣ Deploy Monitoring Stack (Prometheus + Grafana)
+    ############################################
+    - name: Monitoring Stack
+      import_role:
+        name: monitoring_setup
+      tags:
+        - monitoring_setup
+
+    ############################################
+    # 4️⃣ Add DNS Records in Route53
+    ############################################
+    - name: Configure Route53 DNS Records
+      import_role:
+        name: azure_dns_route53
+      tags:
+        - azure_dns_route53
+
+    ############################################
+    # 5️⃣ Trimite email cu datele de acces
+    ############################################
+    - name: Trimite email cu acces
+      import_role:
+        name: send_summary_email
+      tags:
+        - send_summary_email

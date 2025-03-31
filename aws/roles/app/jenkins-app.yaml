@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jenkins
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: "https://charts.jenkins.io"
+    targetRevision: "5.8.18"
+    chart: "jenkins"
+    helm:
+      values: |
+        controller:
+          javaOpts: "-Dhudson.security.csrf.GlobalCrumbIssuerConfiguration.DISABLE_CSRF_PROTECTION=true"
+          serviceType: ClusterIP
+          annotations:
+            alb.ingress.kubernetes.io/scheme: internet-facing
+            alb.ingress.kubernetes.io/target-type: ip
+            alb.ingress.kubernetes.io/group.name: jenkins-alb
+            kubernetes.io/ingress.class: alb
+        ingress:
+          enabled: true
+          ingressClassName: alb
+          annotations:
+            alb.ingress.kubernetes.io/scheme: internet-facing
+            alb.ingress.kubernetes.io/target-type: ip
+            alb.ingress.kubernetes.io/group.name: jenkins-alb
+            kubernetes.io/ingress.class: alb
+          hostName: jenkins.k8s.it.com
+          paths:
+            - path: /
+              pathType: ImplementationSpecific
+          tls: []
+        persistence:
+          enabled: true
+          storageClass: "gp2"
+          size: "8Gi"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: jenkins
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

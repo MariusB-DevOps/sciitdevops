@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: 'https://github.com/MariusB-DevOps/sciitdevops.git'
+    repoURL: 'https://github.com/MariusB-DevOps/tf.git'
     targetRevision: HEAD
     path: html/nginx
   destination:

@@ -1,4 +1,0 @@
-### Jenkins Instances ###
-INSTANCE_IP=10.0.0.148
-INSTANCE_IP=10.0.1.62
-########################

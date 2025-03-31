@@ -1,0 +1,145 @@
+############################################
+# 1️⃣ Activăm IMDS pe toate instanțele EC2
+############################################
+
+- name: Get list of EC2 instances
+  amazon.aws.ec2_instance_info:
+    filters:
+      instance-state-name: ["running", "stopped"]
+  register: ec2_instances
+
+- name: Enable IMDS for all EC2 instances
+  shell: >
+    aws ec2 modify-instance-metadata-options \
+      --instance-id {{ item.instance_id }} \
+      --http-endpoint enabled \
+      --http-put-response-hop-limit 2 \
+      --http-tokens optional
+  loop: "{{ ec2_instances.instances }}"
+  loop_control:
+    label: "{{ item.instance_id }}"
+  when: ec2_instances.instances | length > 0
+
+############################################
+# 2️⃣ Salvăm IP-urile EC2 în params.txt
+############################################
+
+- name: Get EKS-related instance IPs
+  shell: >
+    aws ec2 describe-instances \
+      --filters "Name=tag:eks:cluster-name,Values=main-eks-cluster" \
+      --query "Reservations[].Instances[].PrivateIpAddress" \
+      --output text
+  register: eks_ips
+
+- name: Write IPs to params.txt
+  copy:
+    dest: ../../params.txt
+    content: |
+      ### Jenkins Instances ###
+      {% for ip in eks_ips.stdout.split() %}
+      INSTANCE_IP={{ ip }}
+      {% endfor %}
+      ########################
+
+############################################
+# 3️⃣ Apply resurse Kubernetes (namespace, ingress, jenkins)
+############################################
+
+- name: Apply Jenkins namespace
+  kubernetes.core.k8s:
+    state: present
+    src: namespace.yaml
+
+- name: Apply IngressClass
+  kubernetes.core.k8s:
+    state: present
+    src: ingressclass.yaml
+
+- name: Apply Ingress
+  kubernetes.core.k8s:
+    state: present
+    src: ingress.yaml
+
+- name: Patch gp2 storageclass
+  shell: >
+    kubectl patch storageclass gp2 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}' || true
+
+- name: Apply Jenkins deployment
+  kubernetes.core.k8s:
+    state: present
+    src: jenkins-app.yaml
+
+############################################
+# 4️⃣ Așteptare pod + verificare status Jenkins
+############################################
+
+- name: Wait for Jenkins pod to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: jenkins
+    label_selectors:
+      - app.kubernetes.io/name=jenkins
+  register: jenkins_pods
+  until: jenkins_pods.resources | length > 0
+  retries: 15
+  delay: 10
+
+- name: Wait until Jenkins pod is Ready
+  shell: >
+    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=jenkins -n jenkins --timeout=180s
+  register: pod_ready
+
+- name: Get Jenkins pod IPs
+  shell: >
+    kubectl get pod -n jenkins -l app.kubernetes.io/name=jenkins -o jsonpath='{.items[*].status.podIP}'
+  register: pod_ips
+  until: pod_ips.stdout != ""
+  retries: 10
+  delay: 15
+
+############################################
+# 5️⃣ Înregistrare IP-uri în Target Group
+############################################
+
+- name: Get Target Group ARN
+  shell: >
+    aws elbv2 describe-target-groups \
+      --query 'TargetGroups[?TargetGroupName==`jenkins-tg`].TargetGroupArn' \
+      --output text
+  register: tg_arn
+
+- name: Register Jenkins pods in target group
+  shell: >
+    aws elbv2 register-targets \
+      --target-group-arn {{ tg_arn.stdout }} \
+      --targets {{ pod_ips.stdout.split() | map('regex_replace', '^(.*)$', 'Id=\1') | join(' ') }}
+
+############################################
+# 6️⃣ Verificare acces Jenkins prin ALB
+############################################
+
+- name: Get ALB Hostname
+  shell: >
+    aws elbv2 describe-load-balancers \
+      --query "LoadBalancers[?LoadBalancerName=='jenkins-alb'].DNSName" \
+      --output text
+  register: alb_hostname
+
+############################################
+# 7️⃣ Creare DNS record pentru Jenkins
+############################################
+
+- name: Get Route53 hosted zone ID
+  command: aws route53 list-hosted-zones-by-name --dns-name "{{ dns_domain }}." --query "HostedZones[0].Id" --output text
+  register: hosted_zone_id
+  failed_when: hosted_zone_id.stdout == ""
+
+- name: Get Route53 record for Jenkins
+  command: aws route53 list-resource-record-sets --hosted-zone-id {{ hosted_zone_id.stdout }} --query "ResourceRecordSets[?Name=='{{ jenkins_dns }}.']" --output json
+  register: dns_record
+
+- name: Fail if Jenkins DNS record is not found
+  fail:
+    msg: "Jenkins DNS record {{ jenkins_dns }} not found in Route53!"
+  when: dns_record.stdout == "[]"

@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jenkins
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jenkins.io
+    chart: jenkins
+    targetRevision: 5.8.17
+    helm:
+      values: |
+        controller:
+          serviceType: LoadBalancer
+          servicePort: 80
+          javaOpts: "-Dhudson.security.csrf.GlobalCrumbIssuerConfiguration.DISABLE_CSRF_PROTECTION=true"
+
+          installPlugins:
+            - github:1.42.0
+            - credentials-binding
+            - git
+            - kubernetes
+            - workflow-aggregator
+            - job-dsl
+            - configuration-as-code
+            - kubernetes-credentials-provider
+
+          persistence:
+            enabled: true
+            size: 10Gi
+            storageClass: "azurefile-csi"
+            accessModes:
+              - ReadWriteOnce
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: jenkins
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true

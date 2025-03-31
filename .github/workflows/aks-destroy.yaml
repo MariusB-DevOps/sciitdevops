@@ -1,0 +1,56 @@
+name: Azure AKS Destroy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+
+    env:
+      TF_VAR_client_id: ${{ secrets.ARM_CLIENT_ID }}
+      TF_VAR_tenant_id: ${{ secrets.ARM_TENANT_ID }}
+      TF_VAR_backend_rg: ${{ secrets.BACKEND_RG }}
+      TF_VAR_storage_account_name: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+      TF_VAR_container_name: ${{ secrets.CONTAINER_NAME }}
+      TF_VAR_state_file_name: ${{ secrets.STATE_FILE_NAME }}
+      TF_VAR_rg_name: ${{ secrets.RG_NAME }}
+      TF_VAR_location: ${{ secrets.LOCATION }}
+      TF_VAR_cluster_name: ${{ secrets.CLUSTER_NAME }}
+      TF_VAR_node_count: ${{ secrets.NODE_COUNT }}
+
+    defaults:
+      run:
+        working-directory: Azure/terraform/aks
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Login to Azure with OIDC
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.ARM_CLIENT_ID }}
+        tenant-id: ${{ secrets.ARM_TENANT_ID }}
+        subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        enable-AzPSSession: false
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.11.2
+
+    - name: Terraform Init (with backend config)
+      run: |
+        terraform init \
+          -backend-config="resource_group_name=${{ secrets.BACKEND_RG }}" \
+          -backend-config="storage_account_name=${{ secrets.STORAGE_ACCOUNT_NAME }}" \
+          -backend-config="container_name=${{ secrets.CONTAINER_NAME }}" \
+          -backend-config="key=${{ secrets.STATE_FILE_NAME }}"
+
+    - name: Terraform Destroy
+      run: terraform destroy -auto-approve -lock=false

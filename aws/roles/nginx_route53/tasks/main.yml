@@ -1,0 +1,55 @@
+############################################
+# 🔁 Obținem hostname-ul LoadBalancer-ului NGINX
+############################################
+- name: Obține hostname-ul LoadBalancer-ului pentru NGINX
+  shell: >
+    kubectl get svc nginx-service -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: nginx_lb_hostname
+  until: nginx_lb_hostname.stdout != ""
+  retries: 20
+  delay: 15
+
+############################################
+# 🔧 Setăm hostname-ul ca variabilă de lucru
+############################################
+- name: Setăm variabila cu DNS
+  set_fact:
+    nginx_dns: "{{ nginx_lb_hostname.stdout }}"
+
+############################################
+# 📝 Generăm payload-ul JSON pentru Route53
+############################################
+- name: Creăm payload pentru DNS NGINX
+  copy:
+    dest: "/tmp/nginx-dns-record.json"
+    content: |
+      {
+        "Comment": "Add CNAME record for NGINX",
+        "Changes": [{
+          "Action": "UPSERT",
+          "ResourceRecordSet": {
+            "Name": "app.k8s.it.com",
+            "Type": "CNAME",
+            "TTL": 300,
+            "ResourceRecords": [{
+              "Value": "{{ nginx_dns }}"
+            }]
+          }
+        }]
+      }
+
+############################################
+# 🔄 Preluăm variabila HOSTED_ZONE_ID din ENV
+############################################
+- name: Setăm HOSTED_ZONE_ID direct (evităm lookup ENV)
+  set_fact:
+    HOSTED_ZONE_ID: "Z09193361LF7GGPR453HY"
+    
+############################################
+# 🛰️ Creăm înregistrarea DNS în Route53 pentru NGINX
+############################################
+- name: Creează înregistrare DNS în Route 53 pentru NGINX
+  shell: >
+    aws route53 change-resource-record-sets
+    --hosted-zone-id "{{ HOSTED_ZONE_ID }}"
+    --change-batch file:///tmp/nginx-dns-record.json

@@ -1,0 +1,89 @@
+- name: Deploy Terraform infrastructure
+  hosts: localhost
+  become: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3  
+    terraform_dir: "{{ playbook_dir }}/roles/terraform"
+    argocd_dir: "{{ playbook_dir }}/roles/argocd"
+    jenkins_dir: "{{ playbook_dir }}/roles/jenkins"
+    app_dir: "{{ playbook_dir }}/roles/app"
+    git_dir: "{{ playbook_dir }}/roles/git"
+    jenkins_setup_dir: "{{ playbook_dir }}/roles/jenkins_setup"
+    dns_domain: "k8s.it.com"
+    jenkins_dns: "jenkins.k8s.it.com"
+
+  tasks:
+
+    ############################################
+    # 1️⃣ Deploy EKS și rețea cu Terraform
+    ############################################
+    - name: Deploy networking and EKS using Terraform
+      import_role:
+        name: terraform
+      tags: terraform
+
+    ############################################
+    # 2️⃣ Deploy ArgoCD în clusterul EKS
+    ############################################
+    - name: Deploy ArgoCD using Terraform
+      import_role:
+        name: argocd
+      tags: argocd
+
+    ############################################
+    # 3️⃣ Deploy dependințe Jenkins (ALB, role, DNS)
+    ############################################
+    - name: Deploy Jenkins dependencies using Terraform
+      import_role:
+        name: jenkins
+      tags: jenkins
+
+    ############################################
+    # 4️⃣ Deploy Jenkins prin ArgoCD
+    ############################################
+    - name: Deploy Jenkins through ArgoCD
+      import_role:
+        name: app
+      tags: app
+
+    ############################################
+    # 5️⃣ Configurare GitHub în ArgoCD (acces la repo)
+    ############################################
+    - name: Configure GitHub in ArgoCD
+      import_role:
+        name: git
+      tags: git
+
+    ############################################
+    # 6️⃣ Configurare Jenkins: GitHub + credentiale + pipeline
+    ############################################
+    - name: Configure Jenkins + GitHub
+      import_role:
+        name: jenkins_setup
+      tags: jenkins_setup 
+
+    ############################################
+    # 7️⃣ Deploy Prometheus și Grafana în EKS
+    ############################################
+    - name: Deploy Prometheus and Grafana
+      import_role:
+        name: monitoring_setup
+      tags: monitoring_setup
+
+    ############################################
+    # 8️⃣ DNS NGINX - app.k8s.it.com în Route 53
+    ############################################
+    - name: Creează DNS NGINX în Route 53
+      import_role:
+        name: nginx_route53
+      tags:
+        - nginx_route53
+
+    ############################################
+    # 5️⃣ Trimite email cu datele de acces
+    ############################################
+    - name: Trimite email cu acces
+      import_role:
+        name: send_summary_email
+      tags:
+        - send_summary_email

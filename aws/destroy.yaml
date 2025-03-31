@@ -1,0 +1,23 @@
+- name: Destroy Terraform infrastructure
+  hosts: localhost
+  become: false
+  vars:
+    terraform_dir: "{{ playbook_dir }}/roles/terraform"
+    argocd_dir: "{{ playbook_dir }}/roles/argocd"
+    jenkins_dir: "{{ playbook_dir }}/roles/jenkins"
+    app_dir: "{{ playbook_dir }}/roles/app"
+    git_dir: "{{ playbook_dir }}/roles/git"
+    jenkins_setup_dir: "{{ playbook_dir }}/roles/jenkins_setup"
+
+  tasks:
+    - name: Destroy Init
+      shell: terraform init
+      args:
+        chdir: "{{ terraform_dir }}"
+      tags: terraform
+
+    - name: Destroy Terraform
+      shell: terraform destroy -auto-approve
+      args:
+        chdir: "{{ terraform_dir }}"
+      tags: terraform

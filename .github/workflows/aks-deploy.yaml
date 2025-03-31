@@ -1,0 +1,254 @@
+﻿name: Azure AKS Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    env:
+      # 👉 Variabile Terraform, GitHub, AWS
+      TF_VAR_client_id: ${{ secrets.ARM_CLIENT_ID }}
+      TF_VAR_tenant_id: ${{ secrets.ARM_TENANT_ID }}
+      TF_VAR_backend_rg: ${{ secrets.BACKEND_RG }}
+      TF_VAR_storage_account_name: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+      TF_VAR_container_name: ${{ secrets.CONTAINER_NAME }}
+      TF_VAR_state_file_name: ${{ secrets.STATE_FILE_NAME }}
+      TF_VAR_rg_name: ${{ secrets.RG_NAME }}
+      TF_VAR_location: ${{ secrets.LOCATION }}
+      TF_VAR_cluster_name: ${{ secrets.CLUSTER_NAME }}
+      TF_VAR_node_count: ${{ secrets.NODE_COUNT }}
+      GH_REPO_URL: ${{ secrets.GH_REPO_URL }}
+      GH_USERNAME: ${{ secrets.GH_USERNAME }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      HOSTED_ZONE_ID: ${{ secrets.HOSTED_ZONE_ID }}
+      outlook_user: ${{ secrets.OUTLOOK_USER }}
+      outlook_pass: ${{ secrets.OUTLOOK_PASS }}
+
+    defaults:
+      run:
+        working-directory: Azure/terraform/aks
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v2
+
+    - name: Login to Azure with OIDC
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.ARM_CLIENT_ID }}
+        tenant-id: ${{ secrets.ARM_TENANT_ID }}
+        subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+    - name: Install Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.11.2
+
+    - name: Install yq
+      run: |
+        ############################################
+        # Instalăm yq (util pentru procesare YAML)
+        ############################################
+        sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+        sudo chmod +x /usr/bin/yq
+
+    - name: Terraform Init
+      run: |
+        ############################################
+        # Inițializăm Terraform cu backend în Azure Storage
+        ############################################
+        terraform init \
+          -backend-config="resource_group_name=${{ secrets.BACKEND_RG }}" \
+          -backend-config="storage_account_name=${{ secrets.STORAGE_ACCOUNT_NAME }}" \
+          -backend-config="container_name=${{ secrets.CONTAINER_NAME }}" \
+          -backend-config="key=${{ secrets.STATE_FILE_NAME }}"
+
+    - name: Terraform Validate
+      run: |
+        ############################################
+        # Validăm fișierele Terraform
+        ############################################
+        terraform validate
+
+    - name: Terraform Apply
+      run: |
+        ############################################
+        # Aplicăm infrastructura Terraform
+        ############################################
+        terraform apply -auto-approve -lock=false
+
+    - name: Export KUBECONFIG
+      run: |
+        ############################################
+        # Salvăm kubeconfig pentru a putea folosi kubectl
+        ############################################
+        mkdir -p ~/.kube
+        echo "$(terraform output -raw kube_config)" > ~/.kube/config
+        chmod 600 ~/.kube/config
+
+    - name: Verify Deployment
+      run: |
+        ############################################
+        # Verificăm că nodurile AKS sunt active
+        ############################################
+        kubectl get nodes
+
+    - name: Setup Ansible
+      run: |
+        ############################################
+        # Instalăm Ansible pentru deploy aplicații
+        ############################################
+        sudo apt-get update
+        sudo apt-get install -y ansible
+
+    - name: Install Python and Pip
+      run: |
+        ############################################
+        # Instalăm Python și Pip pentru dependințe
+        ############################################
+        sudo apt-get install -y python3-pip
+
+    - name: Install boto3
+      run: |
+        ############################################
+        # Instalăm boto3 pentru interacțiune cu AWS din Ansible
+        ############################################
+        pip install boto3 botocore
+
+    - name: Install Python Kubernetes package
+      run: |
+        ############################################
+        # Instalăm clientul Python pentru Kubernetes
+        ############################################
+        pip install kubernetes
+
+    - name: Install ArgoCD CLI
+      run: |
+        ############################################
+        # Instalăm CLI-ul ArgoCD pentru automatizări
+        ############################################
+        curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+        chmod +x argocd
+        sudo mv argocd /usr/local/bin/argocd
+
+    - name: Deploy to AKS with Ansible
+      run: |
+        ############################################
+        # Deploy ArgoCD în cluster cu Ansible
+        ############################################
+        ansible-playbook ../../ansible-playbook/deploy.yaml --tags argocd
+
+    - name: Get ArgoCD IP and Password from Key Vault
+      id: get-argocd-secrets
+      run: |
+        ############################################
+        # Preluăm IP-ul și parola de admin din Key Vault
+        ############################################
+        export ARGOCD_IP=$(az keyvault secret show --vault-name my-keyvault-name --name argocd-ip --query value -o tsv)
+        export ARGOCD_PASSWORD=$(az keyvault secret show --vault-name my-keyvault-name --name argocd-password --query value -o tsv)
+        echo "ARGOCD_SERVER=${ARGOCD_IP}" >> $GITHUB_ENV
+        echo "ARGOCD_PASSWORD=${ARGOCD_PASSWORD}" >> $GITHUB_ENV
+        echo "ARGOCD_USERNAME=admin" >> $GITHUB_ENV
+
+    - name: Login to ArgoCD
+      run: |
+        ############################################
+        # Ne autentificăm în ArgoCD
+        ############################################
+        argocd login $ARGOCD_SERVER \
+          --username $ARGOCD_USERNAME \
+          --password $ARGOCD_PASSWORD \
+          --plaintext
+
+    - name: Create Jenkins namespace
+      run: |
+        ############################################
+        # Cream namespace-ul pentru Jenkins dacă nu există
+        ############################################
+        kubectl create namespace jenkins || echo "Namespace already exists"
+
+    - name: Create Nginx-ingress namespace
+      run: |
+        ############################################
+        # Cream namespace-ul pentru NGINX Ingress
+        ############################################
+        kubectl create namespace ingress-nginx || echo "Namespace already exists"
+
+    - name: Apply ArgoCD Applications
+      run: |
+        ############################################
+        # Aplicăm aplicația Jenkins în ArgoCD
+        ############################################
+        kubectl apply -f ../../ansible-playbook/roles/jenkins/jenkins-app.yaml -n argocd
+
+    - name: Get Jenkins admin password and store in Key Vault (with retry)
+      run: |
+        ############################################
+        # Așteptăm parola de admin Jenkins și o salvăm în Key Vault
+        ############################################
+        RETRIES=20
+        DELAY=15
+        COUNT=0
+        while true; do
+          echo "🔁 Încerc să obțin parola Jenkins... ($COUNT/$RETRIES)"
+          JENKINS_PASSWORD=$(kubectl get secret jenkins -n jenkins -o jsonpath="{.data.jenkins-admin-password}" 2>/dev/null | base64 -d || true)
+          if [[ ! -z "$JENKINS_PASSWORD" ]]; then
+            echo "✅ Parola Jenkins a fost obținută!"
+            break
+          fi
+          COUNT=$((COUNT + 1))
+          if [[ $COUNT -ge $RETRIES ]]; then
+            echo "❌ Nu s-a putut obține parola Jenkins după $RETRIES încercări."
+            exit 1
+          fi
+          sleep $DELAY
+        done
+        az keyvault secret set \
+          --vault-name my-keyvault-name \
+          --name jenkins-password \
+          --value "$JENKINS_PASSWORD"
+
+    - name: Grant Jenkins SA access to ConfigMaps in default namespace
+      run: |
+        ############################################
+        # Acordăm Jenkins acces la ConfigMaps din namespace-ul default
+        ############################################
+        kubectl apply -f ../../ansible-playbook/roles/jenkins/jenkins-configmap-access.yaml
+
+    - name: Setup Jenkins pipeline and credentials
+      run: |
+        ############################################
+        # Rulăm Ansible pentru configurare pipeline Jenkins
+        ############################################
+        ansible-playbook ../../ansible-playbook/deploy.yaml --tags jenkins
+
+    - name: Deploy monitoring stack
+      run: |
+        ############################################
+        # Deploy Prometheus + Grafana + ServiceMonitor
+        ############################################
+        ansible-playbook ../../ansible-playbook/deploy.yaml --tags monitoring_setup
+
+    - name: Setup DNS records
+      run: |
+        ############################################
+        # Adăugăm înregistrări DNS în Route53 pentru serviciile AKS
+        ############################################
+        ansible-playbook ../../ansible-playbook/deploy.yaml --tags azure_dns_route53
+
+    - name: Send access summary email
+      run: |
+        ############################################
+        # Trimitem email cu URL-urile și parolele serviciilor
+        ############################################
+        ansible-playbook ../../ansible-playbook/deploy.yaml --tags send_summary_email
+

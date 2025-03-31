@@ -1,0 +1,39 @@
+﻿name: AWS EKS Destroy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  destroy-infrastructure:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./aws
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ansible, Terraform, kubectl, AWS CLI)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip curl ansible
+
+          wget https://releases.hashicorp.com/terraform/1.11.2/terraform_1.11.2_linux_amd64.zip
+          unzip terraform_1.11.2_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+
+          curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+
+      - name: Configure AWS credentials
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region ${{ secrets.AWS_REGION }}
+
+      - name: Destroy infrastructure with Ansible
+        run: |
+          echo "🧨 Destroying AWS infrastructure..."
+          ansible-playbook destroy.yaml

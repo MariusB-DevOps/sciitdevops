@@ -1,0 +1,133 @@
+#######################################################
+# ✅ Setăm variabilele din GitHub Actions (ENV → facts)
+#######################################################
+
+- name: Setăm facte din ENV
+  set_fact:
+    github_user: "{{ lookup('env', 'GH_USERNAME') }}"
+    github_token: "{{ lookup('env', 'GH_TOKEN') }}"
+
+#######################################################
+# ✅ Obținem IP-ul extern al LoadBalancer-ului Jenkins
+#######################################################
+
+- name: Obține IP-ul Jenkins din AKS
+  shell: >
+    kubectl get svc jenkins -n jenkins -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+  register: jenkins_ip
+  until: jenkins_ip.stdout != ""
+  retries: 30
+  delay: 10
+
+- set_fact:
+    jenkins_url: "{{ jenkins_ip.stdout }}"
+
+#######################################################
+# ✅ Obținem parola de admin din secretul Kubernetes
+#######################################################
+
+- name: Obține parola Jenkins
+  shell: >
+    kubectl get secret jenkins -n jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 --decode
+  register: jenkins_password
+
+- name: 🔍 Debug - Afișăm variabilele
+  debug:
+    msg:
+      - "jenkins_url: {{ jenkins_url }}"
+      - "jenkins_password: {{ jenkins_password.stdout }}"
+      - "github_user: {{ github_user }}"
+      - "github_token: {{ github_token }}"
+
+#######################################################
+# ✅ Asteptam pana Jenkins este disponibil
+#######################################################
+
+- name: 🔄 Așteaptă până Jenkins este disponibil
+  uri:
+    url: "http://{{ jenkins_url }}/login"
+    method: GET
+    return_content: no
+    status_code: 200
+    timeout: 10
+  register: jenkins_ready
+  until: jenkins_ready.status == 200
+  retries: 20
+  delay: 10
+
+#######################################################
+# ✅ Creează script-ul bash pentru adăugarea credențialelor GitHub
+#######################################################
+
+- name: Creează scriptul pentru credentiale
+  copy:
+    dest: "/tmp/add_credentials.sh"
+    content: |
+      #!/bin/bash
+      JENKINS_URL="{{ jenkins_url }}"
+      JENKINS_USER="admin"
+      JENKINS_PASSWORD="{{ jenkins_password.stdout }}"
+      GITHUB_TOKEN="{{ github_token }}"
+      GITHUB_USER="{{ github_user }}"
+
+      curl -k -L -X POST "http://$JENKINS_USER:$JENKINS_PASSWORD@$JENKINS_URL/credentials/store/system/domain/_/createCredentials" \
+        -H "Content-Type: multipart/form-data" \
+        -F "json={\"\": \"0\", \"credentials\": {\"scope\": \"GLOBAL\", \"id\": \"github-token\", \"username\": \"$GITHUB_USER\", \"password\": \"$GITHUB_TOKEN\", \"description\": \"GitHub Credentials for Jenkins\", \"\$class\": \"com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl\"}}"
+  register: script_creation
+
+#######################################################
+# ✅ Dă permisiuni de execuție pe script
+#######################################################
+
+- name: Fă script-ul executabil
+  file:
+    path: "/tmp/add_credentials.sh"
+    mode: '0755'
+
+#######################################################    
+# ✅ Rulează script-ul care adaugă credentialele în Jenkins
+#######################################################
+
+- name: Rulează script-ul pentru adăugarea credentialelor
+  script: /tmp/add_credentials.sh
+  register: jenkins_credentials_response
+
+#######################################################
+# ✅ Creează job-ul Jenkins cu fișierul pipeline.xml din root
+#######################################################
+
+- name: Creează job-ul Jenkins folosind curl
+  shell: >
+    curl -k -X POST "http://admin:{{ jenkins_password.stdout }}@{{ jenkins_url }}/createItem?name=GitHub-Pipeline" 
+    -H "Content-Type: application/xml" 
+    --data-binary "@pipeline.xml"
+  register: jenkins_job_response
+  failed_when: jenkins_job_response.rc != 0
+  changed_when: false
+
+#######################################################
+# ✅ Afișează răspunsul de la Jenkins (debug)
+#######################################################
+
+- name: Loghează răspunsul de la Jenkins la crearea jobului
+  debug:
+    msg: "Răspunsul de la Jenkins: {{ jenkins_job_response.stdout }}"
+
+#######################################################
+# ✅ Rulează pipeline-ul în Jenkins (manual trigger via curl)
+#######################################################
+
+- name: Rulează pipeline-ul în Jenkins folosind curl
+  shell: >
+    curl -k -X POST "http://admin:{{ jenkins_password.stdout }}@{{ jenkins_url }}/job/GitHub-Pipeline/build"
+  register: jenkins_build_response
+  failed_when: jenkins_build_response.rc != 0
+  changed_when: false
+
+######################################################
+# ✅ Afișează răspunsul la rularea pipeline-ului
+#######################################################
+
+- name: Loghează răspunsul de la Jenkins la rularea pipeline-ului
+  debug:
+    msg: "Răspunsul de la Jenkins: {{ jenkins_build_response.stdout }}"

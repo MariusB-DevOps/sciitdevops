@@ -1,0 +1,53 @@
+############################################
+# Initialize Terraform
+############################################
+
+- name: Initialize Terraform
+  command: terraform init
+  args:
+    chdir: "{{ terraform_dir }}"
+
+############################################
+# Plan and Apply Terraform
+############################################
+
+- name: Plan Terraform
+  command: terraform plan
+  args:
+    chdir: "{{ terraform_dir }}"
+
+- name: Apply Terraform
+  command: terraform apply -auto-approve
+  args:
+    chdir: "{{ terraform_dir }}"
+
+############################################
+# Check EKS status
+############################################
+
+- name: Check EKS status
+  command: "aws eks describe-cluster --name main-eks-cluster"
+  register: eks_status
+  failed_when: "'ACTIVE' not in eks_status.stdout"
+
+############################################
+# Get Terraform outputs
+############################################
+
+- name: Get Terraform outputs for networking and EKS
+  command: terraform output
+  args:
+    chdir: "{{ terraform_dir }}"
+  register: terraform_output
+
+############################################
+# Write Terraform outputs to params.txt
+############################################
+
+- name: Write Terraform outputs for EKS to params.txt
+  copy:
+    content: |
+      ### EKS Terraform Outputs ###
+      {{ terraform_output.stdout }}
+      #############################
+    dest: "{{ playbook_dir }}/params.txt"

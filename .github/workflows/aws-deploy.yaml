@@ -1,0 +1,210 @@
+﻿
+name: AWS EKS Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup-environment:
+    runs-on: ubuntu-latest
+
+    steps:
+      ############################################
+      # 1️⃣ Checkout codul din repository
+      ############################################
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      ############################################
+      # 2️⃣ Instalăm toate uneltele necesare (Ansible, Terraform, kubectl, ArgoCD CLI)
+      ############################################
+      - name: Install dependencies (Ansible, Terraform, kubectl, AWS CLI, ArgoCD, Java)
+        run: |
+          echo "🔹 Installing dependencies..."
+          sudo apt-get update
+          sudo apt-get install -y ansible
+          wget https://releases.hashicorp.com/terraform/1.11.2/terraform_1.11.2_linux_amd64.zip
+          unzip terraform_1.11.2_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+          curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd-linux-amd64
+          sudo mv argocd-linux-amd64 /usr/local/bin/argocd
+          sudo apt-get install -y python3-pip
+          python3 -m pip install --upgrade pip
+          python3 -m pip install boto3 botocore
+          python3 -m pip install kubernetes
+
+      ############################################
+      # 3️⃣ Instalăm Java 17 (pentru Jenkins)
+      ############################################
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      ############################################
+      # 4️⃣ Salvăm binarele ca artifact
+      ############################################
+      - name: Package environment as artifact
+        run: |
+          tar -czf environment.tar.gz /usr/local/bin/terraform /usr/local/bin/kubectl /usr/local/bin/argocd /usr/bin/python3
+          echo "🔹 Environment packaged."
+
+      - name: Upload environment artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: environment
+          path: environment.tar.gz
+
+  deploy-infrastructure:
+    needs: setup-environment
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./aws
+
+    env:
+      outlook_user: ${{ secrets.OUTLOOK_USER }}
+      outlook_pass: ${{ secrets.OUTLOOK_PASS }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      HOSTED_ZONE_ID: ${{ secrets.HOSTED_ZONE_ID }}
+      GH_REPO_URL: ${{ secrets.GH_REPO_URL }}
+      GH_USERNAME: ${{ secrets.GH_USERNAME }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+    steps:
+      ############################################
+      # 1️⃣ Checkout codul din repo
+      ############################################
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      ############################################
+      # 2️⃣ Descărcăm artifact-ul cu unelte preinstalate
+      ############################################
+      - name: Download environment artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: environment
+          path: ./artifacts
+
+      ############################################
+      # 3️⃣ Extragem și pregătim uneltele în PATH
+      ############################################
+      - name: Extract environment
+        run: |
+          echo "🔹 Extracting environment..."
+          sudo tar -xzf ../artifacts/environment.tar.gz -C /
+          echo "🔹 Setting execution permissions..."
+          sudo chmod +x /usr/local/bin/terraform
+          sudo chmod +x /usr/local/bin/kubectl
+          sudo chmod +x /usr/local/bin/argocd
+          echo "🔹 Adding to PATH..."
+          echo 'export PATH=$PATH:/usr/local/bin' >> ~/.bashrc
+          export PATH=$PATH:/usr/local/bin
+          terraform --version
+          kubectl version --client
+          argocd version --client
+          java -version
+
+      ############################################
+      # Instalăm boto3, botocore și kubernetes pentru Ansible
+      ############################################
+      - name: Install Python dependencies for Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          python3 -m pip install --upgrade pip
+          python3 -m pip install boto3 botocore kubernetes
+          
+      ############################################
+      # 4️⃣ Configurăm AWS CLI cu credențiale din GitHub Secrets
+      ############################################
+      - name: Configure AWS credentials
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region ${{ secrets.AWS_REGION }}
+
+      ############################################
+      # 5️⃣ Deploy Terraform pentru EKS + rețea
+      ############################################
+      - name: Deploy EKS and networking using Terraform
+        run: ansible-playbook deploy.yaml --tags terraform
+
+      ############################################
+      # 6️⃣ Salvăm output-urile Terraform în params.txt
+      ############################################
+      - name: Write Terraform outputs for EKS to params.txt (raw)
+        run: terraform output >> ${{ github.workspace }}/aws/params.txt
+
+      - name: Commit params.txt to repo
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add params.txt
+          git commit -m "Update params.txt with Terraform outputs" || echo "No changes to commit"
+          git push origin main || echo "No changes to push"
+
+      ############################################
+      # 7️⃣ Obținem kubeconfig din EKS
+      ############################################
+      - name: Get kubeconfig from EKS
+        run: |
+          echo "🔹 Generating kubeconfig..."
+          aws eks update-kubeconfig --name main-eks-cluster --region ${{ secrets.AWS_REGION }}
+          kubectl get nodes
+
+      ############################################
+      # 8️⃣ Deploy ArgoCD în EKS
+      ############################################
+      - name: Deploy ArgoCD using Ansible
+        run: ansible-playbook deploy.yaml --tags argocd
+
+      ############################################
+      # 9️⃣ Deploy Jenkins dependencies (ALB, DNS, SG)
+      ############################################
+      - name: Deploy Jenkins dependencies using Ansible
+        run: ansible-playbook deploy.yaml --tags jenkins
+
+      ############################################
+      # 🔟 Deploy aplicația Jenkins prin ArgoCD
+      ############################################
+      - name: Deploy application through ArgoCD
+        run: ansible-playbook deploy.yaml --tags app
+
+      ############################################
+      # 1️⃣1️⃣ Configurare GitHub în ArgoCD
+      ############################################
+      - name: Configure GitHub in ArgoCD
+        run: ansible-playbook deploy.yaml --tags git
+
+      ############################################
+      # 1️⃣2️⃣ Configurare Jenkins + GitHub (token, job, pipeline)
+      ############################################
+      - name: Configure Jenkins + GitHub
+        run: ansible-playbook deploy.yaml --tags jenkins_setup
+
+      ############################################
+      # 1️⃣3️⃣ Deploy Prometheus și Grafana
+      ############################################
+      - name: Deploy Prometheus and Grafana
+        run: ansible-playbook deploy.yaml --tags monitoring_setup
+
+      ############################################
+      # 1️⃣4️⃣ Creează DNS NGINX în Route 53
+      ############################################
+      - name: Create DNS for NGINX (app.k8s.it.com)
+        run: ansible-playbook deploy.yaml --tags nginx_route53
+
+      ############################################
+      # 1️⃣5️⃣ Trimite email cu datele de acces
+      ############################################
+      - name: Send summary email with credentials
+        run: ansible-playbook deploy.yaml --tags send_summary_email

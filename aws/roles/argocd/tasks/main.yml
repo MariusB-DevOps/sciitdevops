@@ -1,0 +1,76 @@
+##############################################
+# Obține numele clusterului EKS din output-ul Terraform
+##############################################
+
+- name: Get EKS cluster name from Terraform output
+  command: "terraform output -raw eks_cluster_name"
+  args:
+    chdir: "{{ terraform_dir }}"
+  register: eks_cluster_name
+
+###############################################
+# Configurează kubectl să folosească clusterul EKS
+###############################################
+
+- name: Configure kubectl for EKS cluster
+  command: "aws eks update-kubeconfig --name {{ eks_cluster_name.stdout }} --region eu-west-1"
+
+###############################################
+# Inițializează Terraform în directorul unde este codul pentru ArgoCD
+###############################################
+
+- name: Initialize Terraform for ArgoCD
+  command: terraform init
+  args:
+    chdir: "{{ argocd_dir }}"
+
+###############################################
+# Generează un plan Terraform (opțional, doar pentru verificare)
+###############################################
+
+- name: Plan Terraform for ArgoCD
+  command: terraform plan
+  args:
+    chdir: "{{ argocd_dir }}"
+
+###############################################
+# Aplică configurația Terraform pentru ArgoCD
+###############################################
+
+- name: Apply Terraform for ArgoCD
+  command: terraform apply -auto-approve
+  args:
+    chdir: "{{ argocd_dir }}"
+
+###############################################
+# Verifică dacă podurile ArgoCD rulează în namespace-ul corect
+###############################################
+
+- name: Verify ArgoCD is running
+  command: "kubectl get pods -n argocd"
+  register: argocd_status
+  failed_when: "'Running' not in argocd_status.stdout"  # marchează task-ul ca failed dacă nu e "Running" în output
+
+###############################################
+# Obține toate output-urile Terraform din directorul ArgoCD
+###############################################
+
+- name: Get Terraform outputs for ArgoCD
+  command: terraform output
+  args:
+    chdir: "{{ argocd_dir }}"
+  register: argocd_output
+
+###############################################
+# Adaugă aceste output-uri într-un fișier `params.txt` pentru referință ulterioară
+###############################################
+
+- name: Append ArgoCD outputs to params.txt
+  lineinfile:
+    path: "{{ playbook_dir }}/params.txt"
+    line: |
+      ### ArgoCD Terraform Outputs ###
+      {{ argocd_output.stdout }}
+      ###############################
+    create: yes
+    insertafter: EOF

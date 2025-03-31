@@ -1,0 +1,47 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkins-configmap-access
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-configmap-access-binding
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: jenkins
+roleRef:
+  kind: Role
+  name: jenkins-configmap-access
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkins-argocd-access
+  namespace: argocd
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-argocd-access-binding
+  namespace: argocd
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: jenkins
+roleRef:
+  kind: Role
+  name: jenkins-argocd-access
+  apiGroup: rbac.authorization.k8s.io

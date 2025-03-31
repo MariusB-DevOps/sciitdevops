@@ -1,0 +1,106 @@
+##############################################
+# TASK: Trimite email de finalizare
+##############################################
+
+##############################################
+# Obținem parolele pentru serviciile deploy-ate
+##############################################
+
+- name: Obține parola ArgoCD
+  shell: >
+    kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
+  register: argocd_password_raw
+
+- name: Obține parola Jenkins
+  shell: >
+    kubectl get secret jenkins -n jenkins -o jsonpath="{.data.jenkins-admin-password}" | base64 -d
+  register: jenkins_password_raw
+
+- name: Obține parola Grafana
+  shell: >
+    kubectl get secret grafana -n monitoring -o jsonpath="{.data.admin-password}" | base64 -d
+  register: grafana_password_raw
+
+##############################################
+# Setăm variabilele pentru email
+##############################################
+
+- name: Setăm variabilele pentru email
+  set_fact:
+    argocd_url: "http://argocd.k8s.it.com"
+    argocd_user: "admin"
+    argocd_pass: "{{ argocd_password_raw.stdout }}"
+
+    jenkins_url: "https://jenkins.k8s.it.com"
+    jenkins_user: "admin"
+    jenkins_pass: "{{ jenkins_password_raw.stdout }}"
+
+    grafana_url: "http://grafana.k8s.it.com"
+    grafana_user: "admin"
+    grafana_pass: "{{ grafana_password_raw.stdout }}"
+
+    nginx_url: "http://app.k8s.it.com"
+
+##############################################
+# Trimitem email de finalizare
+##############################################
+
+- name: 📧 Trimitem email de finalizare
+  community.general.mail:
+    host: smtp.office365.com
+    port: 587
+    username: "{{ lookup('env', 'outlook_user') }}"
+    password: "{{ lookup('env', 'outlook_pass') }}"
+    to: 
+      - marius@buricel.eu
+    subject: "🎓 Proiect Final DevOps - Acces Servicii EKS (AWS)"
+    from: "{{ lookup('env', 'outlook_user') }}"
+    subtype: html
+    body: |
+      <html>
+        <body style="font-family:Arial, sans-serif; color:#333;">
+          <h2>🎓 Proiect Final - Curs DevOps (Școala Informală de IT)</h2>
+          <p>Felicitări pentru finalizarea cu succes a cursului DevOps!</p>
+
+          <h3>🔐 Detalii de acces la serviciile deploy-ate:</h3>
+
+          <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;">
+            <tr style="background-color:#f2f2f2;">
+              <th align="left">Serviciu</th>
+              <th align="left">URL</th>
+              <th align="left">User</th>
+              <th align="left">Parolă</th>
+            </tr>
+            <tr>
+              <td>ArgoCD</td>
+              <td><a href="{{ argocd_url }}">{{ argocd_url }}</a></td>
+              <td>{{ argocd_user }}</td>
+              <td>{{ argocd_pass }}</td>
+            </tr>
+            <tr>
+              <td>Jenkins</td>
+              <td><a href="{{ jenkins_url }}">{{ jenkins_url }}</a></td>
+              <td>{{ jenkins_user }}</td>
+              <td>{{ jenkins_pass }}</td>
+            </tr>
+            <tr>
+              <td>Grafana</td>
+              <td><a href="{{ grafana_url }}">{{ grafana_url }}</a></td>
+              <td>{{ grafana_user }}</td>
+              <td>{{ grafana_pass }}</td>
+            </tr>
+            <tr>
+              <td>NGINX</td>
+              <td><a href="{{ nginx_url }}">{{ nginx_url }}</a></td>
+              <td>-</td>
+              <td>-</td>
+            </tr>
+          </table>
+
+          <p style="margin-top:20px;">Mult succes în cariera ta DevOps!<br>
+          <strong>Școala Informală de IT</strong></p>
+
+          <hr>
+          <small style="color:gray;">Acest email a fost generat automat. Nu răspundeți acestui mesaj.</small>
+        </body>
+      </html>

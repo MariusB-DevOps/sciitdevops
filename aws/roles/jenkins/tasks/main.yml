@@ -1,0 +1,43 @@
+##############################
+# Deploy Jenkins Infrastructure with Terraform
+##############################
+
+# Inițializează Terraform în directorul pentru Jenkins
+- name: Initialize Terraform for Jenkins
+  command: terraform init
+  args:
+    chdir: "{{ jenkins_dir }}"
+
+# Rulează terraform plan pentru a vedea ce schimbări vor fi aplicate pentru Jenkins
+- name: Plan Terraform for Jenkins
+  command: terraform plan
+  args:
+    chdir: "{{ jenkins_dir }}"
+
+# Aplică infrastructura Jenkins (ALB, target group, DNS etc.)
+- name: Apply Terraform for Jenkins
+  command: terraform apply -auto-approve
+  args:
+    chdir: "{{ jenkins_dir }}"
+
+##############################
+# Export Jenkins Outputs
+##############################
+
+# Obține output-urile Terraform după aplicare (de exemplu DNS-ul Jenkins)
+- name: Get Terraform outputs for Jenkins
+  command: terraform output
+  args:
+    chdir: "{{ jenkins_dir }}"
+  register: jenkins_output
+
+# Scrie output-urile în fișierul params.txt pentru referință ulterioară
+- name: Append Jenkins outputs to params.txt
+  lineinfile:
+    path: "{{ playbook_dir }}/params.txt"
+    line: |
+      ### Jenkins Terraform Outputs ###
+      {{ jenkins_output.stdout }}
+      ###############################
+    create: yes
+    insertafter: EOF

@@ -1,0 +1,132 @@
+- name: Ensure ArgoCD namespace exists
+  kubernetes.core.k8s:
+    name: argocd
+    api_version: v1
+    kind: Namespace
+    state: present
+
+##############################################
+# Add ArgoCD Helm repo and Install Chart
+##############################################
+
+- name: Add ArgoCD Helm repo
+  kubernetes.core.helm_repository:
+    name: argo
+    repo_url: https://argoproj.github.io/argo-helm
+
+- name: Update Helm repositories and install ArgoCD
+  kubernetes.core.helm:
+    name: argo
+    chart_ref: argo/argo-cd
+    release_namespace: argocd
+    create_namespace: true
+    values:
+      server:
+        extraArgs:
+          - --insecure
+        service:
+          type: LoadBalancer
+        metrics:
+          enabled: true
+          service:
+            port: 8083
+      configs:
+        params:
+          server.metrics.application.enabled: true
+    state: present
+    wait: true
+
+##############################################
+# Ensure LoadBalancer service is applied
+##############################################
+
+- name: Patch ArgoCD service to ensure LoadBalancer
+  kubernetes.core.k8s:
+    state: patched
+    namespace: argocd
+    kind: Service
+    name: argocd-server
+    definition:
+      spec:
+        type: LoadBalancer
+
+##############################################
+# Grant cluster-admin to ArgoCD Server
+##############################################
+
+- name: Create ArgoCD ClusterRoleBinding
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: argocd-cluster-admin
+      subjects:
+        - kind: ServiceAccount
+          name: argocd-server
+          namespace: argocd
+      roleRef:
+        kind: ClusterRole
+        name: cluster-admin
+        apiGroup: rbac.authorization.k8s.io
+
+##############################################
+# Get ArgoCD Service IP and Admin Password
+##############################################
+
+- name: Get ArgoCD LoadBalancer IP
+  shell: |
+    kubectl get svc -n argocd argo-argocd-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+  register: argocd_ip
+  retries: 20
+  delay: 15
+  until: argocd_ip.stdout != ""
+
+- name: Get ArgoCD admin password
+  shell: |
+    kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+  register: argocd_password
+
+##############################################
+# Save ArgoCD IP and Password to Azure Key Vault
+##############################################
+
+- name: Save ArgoCD IP to Azure Key Vault
+  shell: |
+    az keyvault secret set --vault-name {{ keyvault_name }} --name "argocd-ip" --value "{{ argocd_ip.stdout }}"
+
+- name: Save ArgoCD Admin Password to Azure Key Vault
+  shell: |
+    az keyvault secret set --vault-name {{ keyvault_name }} --name "argocd-password" --value "{{ argocd_password.stdout }}"
+
+##############################################
+# Login and Configure GitHub Repo in ArgoCD
+##############################################
+
+- name: Login in ArgoCD
+  shell: |
+    argocd login {{ argocd_ip.stdout }} \
+      --username admin \
+      --password "{{ argocd_password.stdout }}" \
+      --plaintext
+  register: login_status
+  failed_when: "'logged in successfully' not in login_status.stdout"
+
+- name: Debug login status
+  debug:
+    var: login_status.stdout
+
+- name: Add GitHub Repo in ArgoCD
+  shell: >
+    argocd repo add "{{ lookup('env', 'GH_REPO_URL') }}"
+    --username "{{ lookup('env', 'GH_USERNAME') }}"
+    --password "{{ lookup('env', 'GH_TOKEN') }}"
+    --name "my-private-repo"
+    --plaintext
+    --server "{{ argocd_ip.stdout }}"
+  register: repo_add_status
+  failed_when: >
+    repo_add_status.rc != 0 and
+    'Repository already exists' not in repo_add_status.stdout and
+    'added' not in repo_add_status.stdout
