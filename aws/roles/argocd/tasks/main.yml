@@ -41,6 +41,8 @@
   command: terraform apply -auto-approve
   args:
     chdir: "{{ argocd_dir }}"
+  ignore_errors: true
+
 
 ###############################################
 # Verifică dacă podurile ArgoCD rulează în namespace-ul corect
