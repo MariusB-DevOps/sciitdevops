@@ -19,6 +19,7 @@
   command: terraform apply -auto-approve
   args:
     chdir: "{{ jenkins_dir }}"
+  ignore_errors: true
 
 ##############################
 # Export Jenkins Outputs
