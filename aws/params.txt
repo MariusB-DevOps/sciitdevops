@@ -1,0 +1,28 @@
+### EKS Terraform Outputs ###
+alb_controller_role_arn = "arn:aws:iam::597088032758:role/alb-controller-role"
+eks_cluster_auth_token = <sensitive>
+eks_cluster_certificate_authority = "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURCVENDQWUyZ0F3SUJBZ0lJQTRoeEJKTFRYMVl3RFFZSktvWklodmNOQVFFTEJRQXdGVEVUTUJFR0ExVUUKQXhNS2EzVmlaWEp1WlhSbGN6QWVGdzB5TlRBek16RXhNalV5TlRoYUZ3MHpOVEF6TWpreE1qVTNOVGhhTUJVeApFekFSQmdOVkJBTVRDbXQxWW1WeWJtVjBaWE13Z2dFaU1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLCkFvSUJBUURmbHB0eUMxdWQzNG5tQisxL01GY1JIcE0xVlUrL0dZZTRwNVRPU3p3VFQ3VG80b3BaZDY1cElZYzAKQlVDbEpCcUN6WlZ5RG1UR2hmbTRUblpybXcvRDgwUmtudXNjVjFtTFFzTUJaYkQxTjN5Tk1MalREdW1mQUM3cQpMUVcxQUZNMVpZc0NhcGszSWUxRkhESHVUZkticWNacFJiemVFbGFNblJDcFlXZEdyN1V3VUcrbmQzVFlkZ2M0CjkyQkhvcVpNSHlQdEhJOWpPM1VHQW1xN2JwRWN1SDVmTUorQm9hcmQydExHc2pHbVRweEM0cUw3M0huVVg2aXMKTFp0V0VEUE13cXpma0JZZFN3OUhSZlcwWUJrKzJqS2lNQzQ0Y0t6TXFJZlVXL0VoSWpuZHFYdXlsekJNai9rMApqUHNrOEo1VnBjOUtLTGg5N2xIZUd3RkQ1Ym50QWdNQkFBR2pXVEJYTUE0R0ExVWREd0VCL3dRRUF3SUNwREFQCkJnTlZIUk1CQWY4RUJUQURBUUgvTUIwR0ExVWREZ1FXQkJTWGVGY3BoZWxNeXNtMjIxUlQ4SEtDdjFhQUFqQVYKQmdOVkhSRUVEakFNZ2dwcmRXSmxjbTVsZEdWek1BMEdDU3FHU0liM0RRRUJDd1VBQTRJQkFRQnJkeW9VQkh6QwppTEozOWJaWVpsQ1ZRSGg2eVVjVEJTZUdGR0ZOSXNWRmcrQlBaVUlWOVJpNVlCQlJxM3Z0R2QrOUluSkhPZTZSCkg1WDBYWWo2Mm1UUkdmZmY0V25QRmIxcnM0VWpQZmR3RjhzWnZielRaVFg1bVBEQWFJUkU3djFkSFhpT1FDT1oKVlZha3RoL2xPY0lhVDc2MXlTaU5hQ3BqRXRCV04zKzdYcTJpK2pRcWEvSVFOeklnaWFOaVlGUFRldTZ4WlFkego2dW5oV291akNqdlR6YUJmcUtkSlFtcTlSQUpNb2JvRkNzQXpIMngwRm9lWWFCYmZTWjlnQjdCUG4xUGZZT0FqCmtBaVBhYkUyQkNCN2YzTlFTd3pRaTdWSUlRckVFRzBVVlA5UUJLVEJrZUNIN0V3dVM0cXc1S3dMY3VVMW9jRTAKT052Mmh2K25ZaWdxCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K"
+eks_cluster_endpoint = "https://3FC701861DF4CF707268234F6579CC0C.gr7.eu-west-1.eks.amazonaws.com"
+eks_cluster_name = "main-eks-cluster"
+eks_connect = "aws eks --region eu-west-1 update-kubeconfig --name main-eks-cluster"
+eks_node_ids = tolist([])
+eks_node_role_name = "eks-node-role"
+public_subnets = [
+  "subnet-07b71dc4ab6ab9d67",
+  "subnet-07a792de986c7d319",
+]
+subnet_ids = [
+  "subnet-07b71dc4ab6ab9d67",
+  "subnet-07a792de986c7d319",
+]
+vpc_id = "vpc-0c5f56eeb66decf46"
+#############################
+[33m╷[0m[0m
+[33m│[0m [0m[1m[33mWarning: [0m[0m[1mNo outputs found[0m
+[33m│[0m [0m
+[33m│[0m [0m[0mThe state file either has no outputs defined, or all the defined outputs
+[33m│[0m [0mare empty. Please define an output in your configuration with the `output`
+[33m│[0m [0mkeyword and run `terraform refresh` for it to become available. If you are
+[33m│[0m [0musing interpolation, please verify the interpolated value is not empty. You
+[33m│[0m [0mcan use the `terraform console` command to assist.
+[33m╵[0m[0m
